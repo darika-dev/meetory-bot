@@ -1,8 +1,8 @@
 import { Bot, InlineKeyboard } from "grammy";
-import { getAppBaseUrl } from "./config.ts";
-import * as googleConnectionsRepository from "./repositories/googleConnections.ts";
-import * as usersRepository from "./repositories/users.ts";
-import { createOAuthState } from "./security/oauthState.ts";
+import { getAppBaseUrl } from "./config.js";
+import * as googleConnectionsRepository from "./repositories/googleConnections.js";
+import * as usersRepository from "./repositories/users.js";
+import { createOAuthState } from "./security/oauthState.js";
 
 const token = process.env.TELEGRAM_API_TOKEN?.trim();
 

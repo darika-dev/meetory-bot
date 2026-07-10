@@ -1,4 +1,4 @@
-import { sql } from "../db/client.ts";
+import { sql } from "../db/client.js";
 
 export type Calendar = {
   id: string;

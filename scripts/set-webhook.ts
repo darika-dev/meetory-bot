@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { Bot } from "grammy";
-import { getAppBaseUrl } from "../src/config.ts";
+import { getAppBaseUrl } from "../src/config.js";
 
 const token = process.env.TELEGRAM_API_TOKEN;
 

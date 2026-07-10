@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import { getGoogleRedirectUri } from "../config.ts";
+import { getGoogleRedirectUri } from "../config.js";
 
 export const GOOGLE_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/calendar",

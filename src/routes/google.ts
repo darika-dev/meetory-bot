@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { bot } from "../bot.ts";
-import { createGoogleAuthorizationUrl, createGoogleOAuthClient, getGoogleEmail } from "../google/oauth.ts";
-import * as googleConnectionsRepository from "../repositories/googleConnections.ts";
-import * as usersRepository from "../repositories/users.ts";
-import { verifyOAuthState } from "../security/oauthState.ts";
-import { encryptToken } from "../security/tokenEncryption.ts";
+import { bot } from "../bot.js";
+import { createGoogleAuthorizationUrl, createGoogleOAuthClient, getGoogleEmail } from "../google/oauth.js";
+import * as googleConnectionsRepository from "../repositories/googleConnections.js";
+import * as usersRepository from "../repositories/users.js";
+import { verifyOAuthState } from "../security/oauthState.js";
+import { encryptToken } from "../security/tokenEncryption.js";
 
 export const googleRouter = Router();
 

@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { sql } from "../src/db/client.ts";
+import { sql } from "../src/db/client.js";
 
 const initSql = await readFile(join(process.cwd(), "db/init.sql"), "utf8");
 const statements = initSql

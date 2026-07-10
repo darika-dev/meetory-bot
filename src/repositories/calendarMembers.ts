@@ -1,6 +1,6 @@
-import { sql } from "../db/client.ts";
-import type { Calendar } from "./calendars.ts";
-import type { User } from "./users.ts";
+import { sql } from "../db/client.js";
+import type { Calendar } from "./calendars.js";
+import type { User } from "./users.js";
 
 export type CalendarRole = "owner" | "member";
 

@@ -2,9 +2,9 @@ import "dotenv/config";
 import type { RequestHandler } from "express";
 import express from "express";
 import { webhookCallback } from "grammy";
-import { bot } from "./bot.ts";
-import { sql } from "./db/client.ts";
-import { googleRouter } from "./routes/google.ts";
+import { bot } from "./bot.js";
+import { sql } from "./db/client.js";
+import { googleRouter } from "./routes/google.js";
 
 export const app = express();
 
