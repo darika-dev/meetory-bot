@@ -6,13 +6,9 @@ import { createOAuthState } from "./security/oauthState.ts";
 
 const token = process.env.TELEGRAM_API_TOKEN;
 
-if (!token) {
-  throw new Error("TELEGRAM_API_TOKEN is required");
-}
+export const bot = token ? new Bot(token) : null;
 
-export const bot = new Bot(token);
-
-bot.command("start", async (ctx) => {
+bot?.command("start", async (ctx) => {
   const from = ctx.from;
 
   if (!from) {
@@ -43,6 +39,6 @@ bot.command("start", async (ctx) => {
   return ctx.reply(language === "ru" ? "Meetory запущен." : "Meetory is running.");
 });
 
-bot.on("message:text", (ctx) => {
+bot?.on("message:text", (ctx) => {
   return ctx.reply("Choose a calendar before saving an event.");
 });

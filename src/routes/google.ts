@@ -90,7 +90,7 @@ googleRouter.get("/callback", async (req, res) => {
       : "Google Calendar connected. Return to Telegram.";
 
     try {
-      await bot.api.sendMessage(user.telegram_id, successMessage);
+      await bot?.api.sendMessage(user.telegram_id, successMessage);
     } catch {
       // The browser callback should still succeed if Telegram delivery fails.
     }

@@ -39,7 +39,24 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-app.post("/telegram/webhook", telegramWebhookSecretGuard, webhookCallback(bot, "express"));
+app.get("/", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "meetory",
+  });
+});
+
+app.post(
+  "/telegram/webhook",
+  telegramWebhookSecretGuard,
+  bot
+    ? webhookCallback(bot, "express")
+    : (_req, res) => {
+        res.status(500).json({
+          error: "TELEGRAM_API_TOKEN is not configured",
+        });
+      },
+);
 
 app.use("/google", googleRouter);
 
