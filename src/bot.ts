@@ -1,5 +1,8 @@
-import { Bot } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
+import { getAppBaseUrl } from "./config.ts";
+import * as googleConnectionsRepository from "./repositories/googleConnections.ts";
 import * as usersRepository from "./repositories/users.ts";
+import { createOAuthState } from "./security/oauthState.ts";
 
 const token = process.env.TELEGRAM_API_TOKEN;
 
@@ -12,26 +15,32 @@ export const bot = new Bot(token);
 bot.command("start", async (ctx) => {
   const from = ctx.from;
 
-  if (from) {
-    const existingUser = await usersRepository.findByTelegramId(from.id);
-    const profile = {
-      telegramUsername: from.username,
-      firstName: from.first_name,
-      lastName: from.last_name,
-      language: from.language_code,
-    };
-
-    if (existingUser) {
-      await usersRepository.updateProfile(from.id, profile);
-    } else {
-      await usersRepository.create({
-        telegramId: from.id,
-        ...profile,
-      });
-    }
+  if (!from) {
+    return ctx.reply("Meetory is running.");
   }
 
-  return ctx.reply("Meetory is running.");
+  const language = from.language_code?.startsWith("ru") ? "ru" : "en";
+  const user = await usersRepository.upsertTelegramUser({
+    telegramId: String(from.id),
+    telegramUsername: from.username,
+    firstName: from.first_name,
+    lastName: from.last_name,
+    language,
+  });
+  const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
+
+  if (!googleConnection) {
+    const state = createOAuthState(String(from.id));
+    const url = `${getAppBaseUrl()}/google/oauth?state=${encodeURIComponent(state)}`;
+    const keyboard = new InlineKeyboard().url("Google Calendar", url);
+    const message = language === "ru"
+      ? "Подключите Google Calendar, чтобы создавать общие календари и сохранять мероприятия."
+      : "Connect Google Calendar to create shared calendars and save events.";
+
+    return ctx.reply(message, { reply_markup: keyboard });
+  }
+
+  return ctx.reply(language === "ru" ? "Meetory запущен." : "Meetory is running.");
 });
 
 bot.on("message:text", (ctx) => {

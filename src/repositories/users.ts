@@ -11,14 +11,14 @@ export type User = {
 };
 
 export type UserProfileInput = {
-  telegramId: number;
+  telegramId: string;
   telegramUsername?: string;
   firstName?: string;
   lastName?: string;
   language?: string;
 };
 
-export async function findByTelegramId(telegramId: number) {
+export async function findByTelegramId(telegramId: string) {
   const rows = await sql`
     SELECT id, telegram_id, telegram_username, first_name, last_name, language, created_at
     FROM users
@@ -29,7 +29,18 @@ export async function findByTelegramId(telegramId: number) {
   return rows[0] ?? null;
 }
 
-export async function create(input: UserProfileInput) {
+export async function findById(id: string) {
+  const rows = await sql`
+    SELECT id, telegram_id, telegram_username, first_name, last_name, language, created_at
+    FROM users
+    WHERE id = ${id}
+    LIMIT 1
+  ` as User[];
+
+  return rows[0] ?? null;
+}
+
+export async function upsertTelegramUser(input: UserProfileInput) {
   const rows = await sql`
     INSERT INTO users (
       telegram_id,
@@ -45,13 +56,23 @@ export async function create(input: UserProfileInput) {
       ${input.lastName ?? null},
       ${input.language ?? null}
     )
+    ON CONFLICT (telegram_id)
+    DO UPDATE SET
+      telegram_username = EXCLUDED.telegram_username,
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      language = EXCLUDED.language
     RETURNING id, telegram_id, telegram_username, first_name, last_name, language, created_at
   ` as User[];
 
   return rows[0];
 }
 
-export async function updateProfile(telegramId: number, input: Omit<UserProfileInput, "telegramId">) {
+export async function create(input: UserProfileInput) {
+  return upsertTelegramUser(input);
+}
+
+export async function updateProfile(telegramId: string, input: Omit<UserProfileInput, "telegramId">) {
   const rows = await sql`
     UPDATE users
     SET

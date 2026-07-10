@@ -13,8 +13,12 @@ CREATE TABLE IF NOT EXISTS google_connections (
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   google_email TEXT NOT NULL,
   encrypted_refresh_token TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE google_connections
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS calendars (
   id BIGSERIAL PRIMARY KEY,
@@ -35,6 +39,9 @@ CREATE TABLE IF NOT EXISTS calendar_members (
 );
 
 CREATE INDEX IF NOT EXISTS google_connections_user_id_idx
+  ON google_connections(user_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS google_connections_user_id_unique_idx
   ON google_connections(user_id);
 
 CREATE INDEX IF NOT EXISTS calendars_google_connection_id_idx
