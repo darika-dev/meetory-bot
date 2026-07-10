@@ -27,7 +27,7 @@ Create `.env` locally and configure the same variables in Vercel:
 TELEGRAM_API_TOKEN=
 TELEGRAM_WEBHOOK_SECRET=
 DATABASE_URL=
-APP_BASE_URL=
+APP_URL=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=
@@ -35,7 +35,7 @@ OAUTH_STATE_SECRET=
 TOKEN_ENCRYPTION_KEY=
 ```
 
-`APP_BASE_URL` should be your deployed base URL, for example:
+`APP_URL` should be your deployed base URL, for example:
 
 ```txt
 https://<your-vercel-domain>
@@ -116,7 +116,7 @@ Start the local Express server:
 yarn start
 ```
 
-For local Telegram webhook testing, expose the local server with an HTTPS tunnel and set `APP_BASE_URL` to the tunnel URL.
+For local Telegram webhook testing, expose the local server with an HTTPS tunnel and set `APP_URL` to the tunnel URL.
 
 ## Vercel Deploy
 

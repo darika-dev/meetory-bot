@@ -1,8 +1,8 @@
 export function getAppBaseUrl() {
-  const appBaseUrl = process.env.APP_BASE_URL;
+  const appBaseUrl = process.env.APP_URL;
 
   if (!appBaseUrl) {
-    throw new Error("APP_BASE_URL is required");
+    throw new Error("APP_URL is required");
   }
 
   return appBaseUrl.replace(/\/$/, "");

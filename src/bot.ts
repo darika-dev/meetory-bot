@@ -4,9 +4,21 @@ import * as googleConnectionsRepository from "./repositories/googleConnections.t
 import * as usersRepository from "./repositories/users.ts";
 import { createOAuthState } from "./security/oauthState.ts";
 
-const token = process.env.TELEGRAM_API_TOKEN;
+const token = process.env.TELEGRAM_API_TOKEN?.trim();
 
-export const bot = token ? new Bot(token) : null;
+function createBot() {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    return new Bot(token);
+  } catch {
+    return null;
+  }
+}
+
+export const bot = createBot();
 
 bot?.command("start", async (ctx) => {
   const from = ctx.from;
