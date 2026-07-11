@@ -20,6 +20,10 @@ function createBot() {
 
 export const bot = createBot();
 
+bot?.catch((error) => {
+  console.error("Telegram bot error:", error.error);
+});
+
 bot?.command("start", async (ctx) => {
   const from = ctx.from;
 

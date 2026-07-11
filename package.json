@@ -6,9 +6,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/server.ts",
+    "start": "tsc --outDir dist --noEmit false && node dist/src/server.js",
+    "bot:polling": "tsc --outDir dist --noEmit false && node dist/scripts/local-polling.js",
     "db:init": "node scripts/db-init.ts",
+    "db:init:production": "DOTENV_CONFIG_PATH=.env.production node scripts/db-init.ts",
+    "webhook:info": "node scripts/webhook-info.ts",
+    "webhook:info:production": "DOTENV_CONFIG_PATH=.env.production node scripts/webhook-info.ts",
     "webhook:set": "node scripts/set-webhook.ts",
+    "webhook:set:production": "DOTENV_CONFIG_PATH=.env.production node scripts/set-webhook.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
