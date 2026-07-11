@@ -105,15 +105,15 @@ googleRouter.get("/callback", async (req, res) => {
 
     const language = getLanguage(user.language);
     const callbackMessage = language === "ru"
-      ? "Google Calendar подключён. Вернитесь в Telegram."
-      : "Google Calendar connected. Return to Telegram.";
+      ? `${messages.googleConnected(language)} Вернитесь в Telegram.`
+      : `${messages.googleConnected(language)} Return to Telegram.`;
 
     try {
       const calendars = await calendarsRepository.findForUser(user.id);
 
       if (calendars.length === 0) {
         await bot?.api.sendMessage(user.telegram_id, [
-          language === "ru" ? "Google Calendar подключён." : "Google Calendar connected.",
+          messages.googleConnected(language),
           "",
           messages.noCalendars(language),
         ].join("\n"), {

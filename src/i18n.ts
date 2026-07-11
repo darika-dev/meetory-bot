@@ -38,6 +38,12 @@ export const messages = {
       ? "У вас пока нет календарей.\n\nЧто хотите сделать?"
       : "You don't have any calendars yet.\n\nWhat would you like to do?";
   },
+  emptyCalendarsList(language: Language) {
+    return language === "ru" ? "У вас пока нет календарей." : "You don't have any calendars yet.";
+  },
+  googleConnected(language: Language) {
+    return language === "ru" ? "🎉 Google Календарь подключён!" : "🎉 Google Calendar connected!";
+  },
   welcomeBack(language: Language, calendarName: string) {
     return language === "ru"
       ? `С возвращением!\n\nАктивный календарь:\n📅 ${calendarName}`
@@ -45,8 +51,8 @@ export const messages = {
   },
   createCalendarPrompt(language: Language) {
     return language === "ru"
-      ? "Как назвать календарь?\n\nНапример: Meetory Family, Armenian Week или Work Trip."
-      : "What should the calendar be called?\n\nFor example: Meetory Family, Armenian Week, or Work Trip.";
+      ? "Как назвать календарь?\n\nНапример:\n\n• Meetory Family\n• Armenian Week\n• Work Trip"
+      : "What should your calendar be called?\n\nExamples:\n\n• Meetory Family\n• Armenian Week\n• Work Trip";
   },
   invalidCalendarName(language: Language) {
     return language === "ru"
@@ -55,8 +61,13 @@ export const messages = {
   },
   creationSuccess(language: Language, calendarName: string) {
     return language === "ru"
-      ? `✅ Календарь «${calendarName}» создан.\n\nОн выбран активным.`
-      : `✅ Calendar “${calendarName}” created.\n\nIt is now active.`;
+      ? `✅ Календарь "${calendarName}" создан.\n\nТеперь это ваш активный календарь.`
+      : `✅ Calendar "${calendarName}" created.\n\nIt is now your active calendar.`;
+  },
+  firstCalendarHint(language: Language) {
+    return language === "ru"
+      ? "💡 Совсем скоро вы сможете просто переслать любое мероприятие в Meetory, а бот сам предложит сохранить его в календарь."
+      : "💡 Soon you'll be able to forward any event to Meetory and save it directly to your calendar.";
   },
   creationCancelled(language: Language) {
     return language === "ru" ? "Создание календаря отменено." : "Calendar creation cancelled.";
@@ -75,7 +86,7 @@ export const messages = {
     return language === "ru" ? "Функция приглашений появится позже." : "Invites will be available later.";
   },
   calendarsTitle(language: Language) {
-    return language === "ru" ? "Ваши календари:" : "Your calendars:";
+    return language === "ru" ? "Ваши календари" : "Your calendars";
   },
   help(language: Language) {
     return language === "ru"
@@ -87,6 +98,9 @@ export const messages = {
   },
   createCalendarButton(language: Language) {
     return language === "ru" ? "➕ Создать календарь" : "➕ Create calendar";
+  },
+  createFirstCalendarButton(language: Language) {
+    return language === "ru" ? "➕ Создать первый календарь" : "➕ Create your first calendar";
   },
   newCalendarButton(language: Language) {
     return language === "ru" ? "➕ Новый календарь" : "➕ New calendar";

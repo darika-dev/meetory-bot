@@ -8,6 +8,7 @@ import { getLanguage, getTelegramLanguage, messages } from "./i18n.js";
 import {
   connectGoogleKeyboard,
   createCalendarCancelKeyboard,
+  emptyCalendarsKeyboard,
   formatCalendarsList,
   mainCalendarKeyboard,
   noCalendarsKeyboard,
@@ -130,8 +131,8 @@ async function showCalendars(target: ReplyTarget, user: usersRepository.User) {
   const calendars = await calendarsRepository.findForUser(user.id);
 
   if (calendars.length === 0) {
-    return target.reply(messages.noCalendars(language), {
-      reply_markup: noCalendarsKeyboard(language),
+    return target.reply(messages.emptyCalendarsList(language), {
+      reply_markup: emptyCalendarsKeyboard(language),
     });
   }
 
@@ -303,6 +304,7 @@ bot?.on("message:text", async (ctx) => {
   }
 
   let calendar: calendarsRepository.Calendar;
+  const hadCalendarsBeforeCreate = (await calendarsRepository.findForUser(user.id)).length > 0;
 
   try {
     calendar = await calendarsRepository.createOwnedCalendarAndActivate({
@@ -337,7 +339,11 @@ bot?.on("message:text", async (ctx) => {
     return ctx.reply(messages.genericCreateError(language));
   }
 
-  return ctx.reply(messages.creationSuccess(language, calendar.name), {
+  await ctx.reply(messages.creationSuccess(language, calendar.name), {
     reply_markup: mainCalendarKeyboard(language),
   });
+
+  if (!hadCalendarsBeforeCreate) {
+    return ctx.reply(messages.firstCalendarHint(language));
+  }
 });

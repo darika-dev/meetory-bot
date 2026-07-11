@@ -12,9 +12,13 @@ export function connectGoogleKeyboard(telegramUserId: string, language: Language
 
 export function noCalendarsKeyboard(language: Language) {
   return new InlineKeyboard()
-    .text(messages.createCalendarButton(language), callbackData.createCalendar)
+    .text(messages.createFirstCalendarButton(language), callbackData.createCalendar)
     .row()
     .text(messages.joinViaInviteButton(language), callbackData.inviteUnavailable);
+}
+
+export function emptyCalendarsKeyboard(language: Language) {
+  return new InlineKeyboard().text(messages.createFirstCalendarButton(language), callbackData.createCalendar);
 }
 
 export function mainCalendarKeyboard(language: Language) {
@@ -40,6 +44,8 @@ export function formatCalendarsList(input: {
 
     lines.push(`${prefix} ${calendar.name}`);
   }
+
+  lines.push("", "────────────", "", messages.newCalendarButton(input.language));
 
   return lines.join("\n");
 }
