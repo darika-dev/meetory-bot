@@ -1,5 +1,7 @@
 import { google } from "googleapis";
 import { getGoogleRedirectUri } from "../config.js";
+import type { GoogleConnection } from "../repositories/googleConnections.js";
+import { decryptToken } from "../security/tokenEncryption.js";
 
 export const GOOGLE_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/calendar",
@@ -54,4 +56,10 @@ export async function getGoogleEmail(accessToken: string) {
   const response = await oauth2.userinfo.get();
 
   return response.data.email ?? null;
+}
+
+export async function revokeGoogleConnectionRefreshToken(connection: GoogleConnection) {
+  const oauth2Client = createGoogleOAuthClient();
+
+  await oauth2Client.revokeToken(decryptToken(connection.encrypted_refresh_token));
 }

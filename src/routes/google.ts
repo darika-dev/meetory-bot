@@ -7,11 +7,21 @@ import * as googleConnectionsRepository from "../repositories/googleConnections.
 import * as usersRepository from "../repositories/users.js";
 import { verifyOAuthState } from "../security/oauthState.js";
 import { encryptToken } from "../security/tokenEncryption.js";
-import { mainCalendarKeyboard, noCalendarsKeyboard } from "../telegramScreens.js";
+import {
+  mainCalendarKeyboard,
+  noCalendarsKeyboard,
+  reconnectGoogleKeyboard,
+  retryGoogleOAuthKeyboard,
+} from "../telegramScreens.js";
 
 export const googleRouter = Router();
 
 function html(message: string) {
+  const escapedMessage = message
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -20,7 +30,7 @@ function html(message: string) {
     <title>Meetory</title>
   </head>
   <body>
-    <p>${message}</p>
+    <p style="white-space: pre-line">${escapedMessage}</p>
   </body>
 </html>`;
 }
@@ -60,9 +70,73 @@ googleRouter.get("/oauth", (req, res) => {
 googleRouter.get("/callback", async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
+  const oauthError = typeof req.query.error === "string" ? req.query.error : "";
+
+  if (oauthError) {
+    if (!state) {
+      return res.status(400).send(html(messages.oauthInvalidStateBrowser("en")));
+    }
+
+    let payload: ReturnType<typeof verifyOAuthState>;
+
+    try {
+      payload = verifyOAuthState(state);
+    } catch {
+      return res.status(400).send(html(messages.oauthInvalidStateBrowser("en")));
+    }
+
+    const user = await usersRepository.findByTelegramId(payload.telegramUserId);
+
+    if (!user) {
+      return res.status(404).send(html(messages.oauthInvalidStateBrowser("en")));
+    }
+
+    const language = getLanguage(user.language);
+
+    if (oauthError === "access_denied") {
+      try {
+        await bot?.api.sendMessage(user.telegram_id, messages.oauthAccessDeniedTelegram(language), {
+          reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
+        });
+      } catch {
+        // The browser callback should still succeed if Telegram delivery fails.
+      }
+
+      return res.status(400).send(html(messages.oauthAccessDeniedBrowser(language)));
+    }
+
+    console.error("Google OAuth callback error:", {
+      operation: "google_oauth_callback_error",
+      userId: user.id,
+      errorCode: oauthError,
+    });
+
+    try {
+      await bot?.api.sendMessage(user.telegram_id, messages.oauthGenericErrorTelegram(language), {
+        reply_markup: retryGoogleOAuthKeyboard(user.telegram_id, language),
+      });
+    } catch {
+      // The browser callback should still succeed if Telegram delivery fails.
+    }
+
+    return res.status(400).send(html(messages.oauthGenericErrorBrowser(language)));
+  }
 
   if (!code || !state) {
-    return res.status(400).send(html("Missing OAuth code or state."));
+    let language = getLanguage();
+
+    if (state) {
+      try {
+        const payload = verifyOAuthState(state);
+        const user = await usersRepository.findByTelegramId(payload.telegramUserId);
+
+        language = getLanguage(user?.language);
+      } catch {
+        // Keep the fallback language for malformed or expired state.
+      }
+    }
+
+    return res.status(400).send(html(messages.oauthIncompleteBrowser(language)));
   }
 
   try {
@@ -137,7 +211,13 @@ googleRouter.get("/callback", async (req, res) => {
     }
 
     return res.send(html(callbackMessage));
-  } catch {
-    return res.status(400).send(html("Google Calendar connection failed. Please try again."));
+  } catch (error) {
+    console.error("Google OAuth callback failed:", {
+      operation: "google_oauth_callback_success_flow",
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+
+    return res.status(400).send(html(messages.oauthGenericErrorBrowser("en")));
   }
 });

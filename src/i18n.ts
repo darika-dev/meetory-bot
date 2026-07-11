@@ -5,6 +5,8 @@ export const callbackData = {
   cancelCreateCalendar: "calendar:create:cancel",
   listCalendars: "calendar:list",
   inviteUnavailable: "invite:unavailable",
+  confirmGoogleDisconnect: "google:disconnect:confirm",
+  cancelGoogleDisconnect: "google:disconnect:cancel",
 } as const;
 
 export function getLanguage(language?: string | null): Language {
@@ -43,6 +45,36 @@ export const messages = {
   },
   googleConnected(language: Language) {
     return language === "ru" ? "🎉 Google Календарь подключён!" : "🎉 Google Calendar connected!";
+  },
+  oauthAccessDeniedBrowser(language: Language) {
+    return language === "ru"
+      ? "Подключение Google Календаря отменено.\n\nВы можете закрыть эту страницу и вернуться в Telegram."
+      : "Google Calendar connection was cancelled.\n\nYou can close this page and return to Telegram.";
+  },
+  oauthAccessDeniedTelegram(language: Language) {
+    return language === "ru"
+      ? "Google Календарь не был подключён.\n\nВы можете попробовать снова, когда будете готовы."
+      : "Google Calendar wasn't connected.\n\nYou can try again whenever you're ready.";
+  },
+  oauthGenericErrorBrowser(language: Language) {
+    return language === "ru"
+      ? "Не удалось подключить Google Календарь.\n\nВернитесь в Telegram и попробуйте ещё раз."
+      : "Google Calendar couldn't be connected.\n\nReturn to Telegram and try again.";
+  },
+  oauthGenericErrorTelegram(language: Language) {
+    return language === "ru"
+      ? "Не удалось подключить Google Календарь.\n\nПопробуйте ещё раз."
+      : "Google Calendar couldn't be connected.\n\nPlease try again.";
+  },
+  oauthInvalidStateBrowser(language: Language) {
+    return language === "ru"
+      ? "Ссылка авторизации недействительна или устарела.\n\nВернитесь в Telegram и начните подключение заново."
+      : "This authorization link is invalid or has expired.\n\nReturn to Telegram and start again.";
+  },
+  oauthIncompleteBrowser(language: Language) {
+    return language === "ru"
+      ? "Ответ Google об авторизации неполный.\n\nВернитесь в Telegram и попробуйте ещё раз."
+      : "The Google authorization response is incomplete.\n\nReturn to Telegram and try again.";
   },
   welcomeBack(language: Language, calendarName: string) {
     return language === "ru"
@@ -90,11 +122,71 @@ export const messages = {
   },
   help(language: Language) {
     return language === "ru"
-      ? "Команды:\n/start — открыть главное меню\n/newcalendar — создать календарь\n/calendars — показать календари\n/help — помощь"
-      : "Commands:\n/start - open the main menu\n/newcalendar - create a calendar\n/calendars - show calendars\n/help - help";
+      ? "Команды:\n/start — открыть главное меню\n/newcalendar — создать календарь\n/calendars — показать календари\n/disconnect — отключить Google Calendar\n/help — помощь"
+      : "Commands:\n/start - open the main menu\n/newcalendar - create a calendar\n/calendars - show calendars\n/disconnect - disconnect Google Calendar\n/help - help";
+  },
+  disconnectNotConnected(language: Language) {
+    return language === "ru"
+      ? "Google Calendar сейчас не подключён."
+      : "Google Calendar is not connected.";
+  },
+  disconnectConfirm(language: Language, ownsCalendars: boolean) {
+    const base = language === "ru"
+      ? [
+          "Отключить Google Calendar?",
+          "",
+          "Meetory отзовёт доступ к вашему Google Calendar и удалит сохранённую авторизацию.",
+        ]
+      : [
+          "Disconnect Google Calendar?",
+          "",
+          "Meetory will revoke access to your Google Calendar and remove the saved authorization.",
+        ];
+
+    if (ownsCalendars) {
+      base.push(
+        "",
+        language === "ru"
+          ? "Вы владеете календарями. Meetory временно не сможет ими управлять до повторной авторизации."
+          : "You own calendars. Meetory will temporarily be unable to manage them until you authorize Google again.",
+      );
+    }
+
+    return base.join("\n");
+  },
+  disconnectSuccess(language: Language) {
+    return language === "ru"
+      ? [
+          "Google Календарь отключён.",
+          "",
+          "Ваши календари Meetory и участники сохранены.",
+          "",
+          "Подключите Google Календарь снова, когда будете готовы.",
+        ].join("\n")
+      : [
+          "Google Calendar disconnected.",
+          "",
+          "Your Meetory calendars and members were kept.",
+          "",
+          "Connect Google Calendar again whenever you're ready.",
+        ].join("\n");
+  },
+  disconnectCancelled(language: Language) {
+    return language === "ru" ? "Отключение Google Calendar отменено." : "Google Calendar disconnect cancelled.";
+  },
+  disconnectError(language: Language) {
+    return language === "ru"
+      ? "Не удалось отключить Google Calendar. Попробуйте ещё раз позже."
+      : "Could not disconnect Google Calendar. Please try again later.";
   },
   connectGoogle(language: Language) {
     return language === "ru" ? "🔗 Подключить Google" : "🔗 Connect Google";
+  },
+  connectGoogleCalendar(language: Language) {
+    return language === "ru" ? "🔗 Подключить Google" : "🔗 Connect Google Calendar";
+  },
+  tryAgainButton(language: Language) {
+    return language === "ru" ? "🔗 Попробовать снова" : "🔗 Try again";
   },
   createCalendarButton(language: Language) {
     return language === "ru" ? "➕ Создать календарь" : "➕ Create calendar";
@@ -113,5 +205,8 @@ export const messages = {
   },
   cancelButton(language: Language) {
     return language === "ru" ? "✖️ Отмена" : "✖️ Cancel";
+  },
+  disconnectConfirmButton(language: Language) {
+    return language === "ru" ? "Отключить Google" : "Disconnect Google";
   },
 };

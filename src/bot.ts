@@ -4,14 +4,17 @@ import * as googleConnectionsRepository from "./repositories/googleConnections.j
 import * as pendingActionsRepository from "./repositories/pendingActions.js";
 import * as usersRepository from "./repositories/users.js";
 import { createCalendarForUser, deleteCalendarForUser } from "./google/calendarService.js";
+import { revokeGoogleConnectionRefreshToken } from "./google/oauth.js";
 import { getLanguage, getTelegramLanguage, messages } from "./i18n.js";
 import {
   connectGoogleKeyboard,
   createCalendarCancelKeyboard,
   emptyCalendarsKeyboard,
   formatCalendarsList,
+  googleDisconnectConfirmKeyboard,
   mainCalendarKeyboard,
   noCalendarsKeyboard,
+  reconnectGoogleKeyboard,
 } from "./telegramScreens.js";
 
 const CREATE_CALENDAR_TTL_MS = 15 * 60 * 1000;
@@ -147,6 +150,21 @@ async function showCalendars(target: ReplyTarget, user: usersRepository.User) {
   });
 }
 
+async function startDisconnectGoogleFlow(target: ReplyTarget, user: usersRepository.User) {
+  const language = getLanguage(user.language);
+  const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
+
+  if (!googleConnection) {
+    return target.reply(messages.disconnectNotConnected(language));
+  }
+
+  const ownedCalendars = await calendarsRepository.findOwnedByUser(user.id);
+
+  return target.reply(messages.disconnectConfirm(language, ownedCalendars.length > 0), {
+    reply_markup: googleDisconnectConfirmKeyboard(language),
+  });
+}
+
 function validateCalendarName(text: string) {
   const name = text.trim();
 
@@ -192,6 +210,16 @@ bot?.command("help", async (ctx) => {
   const language = getLanguage(user?.language);
 
   return ctx.reply(messages.help(language));
+});
+
+bot?.command("disconnect", async (ctx) => {
+  const user = await upsertTelegramUser(ctx);
+
+  if (!user) {
+    return ctx.reply("Meetory is running.");
+  }
+
+  return startDisconnectGoogleFlow(ctx, user);
 });
 
 bot?.callbackQuery("calendar:create", async (ctx) => {
@@ -241,6 +269,62 @@ bot?.callbackQuery("invite:unavailable", async (ctx) => {
   const language = getLanguage(user?.language);
 
   return ctx.reply(messages.inviteUnavailable(language));
+});
+
+bot?.callbackQuery("google:disconnect:cancel", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = ctx.from
+    ? await usersRepository.findByTelegramId(String(ctx.from.id))
+    : null;
+  const language = getLanguage(user?.language);
+
+  return ctx.reply(messages.disconnectCancelled(language));
+});
+
+bot?.callbackQuery("google:disconnect:confirm", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = ctx.from
+    ? await usersRepository.findByTelegramId(String(ctx.from.id))
+    : null;
+
+  if (!user) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
+
+  if (!googleConnection) {
+    return ctx.reply(messages.disconnectNotConnected(language));
+  }
+
+  try {
+    try {
+      await revokeGoogleConnectionRefreshToken(googleConnection);
+    } catch (revokeError) {
+      console.error("Google token revoke failed:", {
+        operation: "revoke_google_refresh_token",
+        userId: user.id,
+        errorName: revokeError instanceof Error ? revokeError.name : typeof revokeError,
+        errorMessage: revokeError instanceof Error ? revokeError.message : String(revokeError),
+      });
+    }
+
+    await googleConnectionsRepository.deleteByUserId(user.id);
+
+    return ctx.reply(messages.disconnectSuccess(language), {
+      reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
+    });
+  } catch (error) {
+    console.error("Google disconnect failed:", {
+      operation: "delete_google_connection",
+      userId: user.id,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+
+    return ctx.reply(messages.disconnectError(language));
+  }
 });
 
 bot?.on("message:text", async (ctx) => {

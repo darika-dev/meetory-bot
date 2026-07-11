@@ -23,6 +23,10 @@ await bot.api.setMyCommands([
     description: "Show calendars",
   },
   {
+    command: "disconnect",
+    description: "Disconnect Google Calendar",
+  },
+  {
     command: "help",
     description: "Show help",
   },

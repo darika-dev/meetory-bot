@@ -24,10 +24,22 @@ CREATE TABLE IF NOT EXISTS calendars (
   id BIGSERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   google_calendar_id TEXT NOT NULL UNIQUE,
-  google_connection_id BIGINT NOT NULL REFERENCES google_connections(id) ON DELETE CASCADE,
+  google_connection_id BIGINT REFERENCES google_connections(id) ON DELETE SET NULL,
   created_by_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE calendars
+  ALTER COLUMN google_connection_id DROP NOT NULL;
+
+ALTER TABLE calendars
+  DROP CONSTRAINT IF EXISTS calendars_google_connection_id_fkey;
+
+ALTER TABLE calendars
+  ADD CONSTRAINT calendars_google_connection_id_fkey
+  FOREIGN KEY (google_connection_id)
+  REFERENCES google_connections(id)
+  ON DELETE SET NULL;
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS active_calendar_id BIGINT;

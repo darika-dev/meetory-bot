@@ -4,7 +4,7 @@ export type Calendar = {
   id: string;
   name: string;
   google_calendar_id: string;
-  google_connection_id: string;
+  google_connection_id: string | null;
   created_by_user_id: string;
   created_at: Date;
 };
@@ -126,6 +126,17 @@ export async function findForUser(userId: string) {
     INNER JOIN calendars ON calendars.id = calendar_members.calendar_id
     WHERE calendar_members.user_id = ${userId}
     ORDER BY calendar_members.joined_at ASC, calendars.created_at ASC
+  ` as Calendar[];
+
+  return rows;
+}
+
+export async function findOwnedByUser(userId: string) {
+  const rows = await sql`
+    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at
+    FROM calendars
+    WHERE created_by_user_id = ${userId}
+    ORDER BY created_at ASC
   ` as Calendar[];
 
   return rows;

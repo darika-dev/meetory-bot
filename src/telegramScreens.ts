@@ -10,6 +10,18 @@ export function connectGoogleKeyboard(telegramUserId: string, language: Language
   return new InlineKeyboard().url(messages.connectGoogle(language), url);
 }
 
+export function reconnectGoogleKeyboard(telegramUserId: string, language: Language) {
+  const url = `${getAppBaseUrl()}/google/oauth?state=${encodeURIComponent(createOAuthState(telegramUserId))}`;
+
+  return new InlineKeyboard().url(messages.connectGoogleCalendar(language), url);
+}
+
+export function retryGoogleOAuthKeyboard(telegramUserId: string, language: Language) {
+  const url = `${getAppBaseUrl()}/google/oauth?state=${encodeURIComponent(createOAuthState(telegramUserId))}`;
+
+  return new InlineKeyboard().url(messages.tryAgainButton(language), url);
+}
+
 export function noCalendarsKeyboard(language: Language) {
   return new InlineKeyboard()
     .text(messages.createFirstCalendarButton(language), callbackData.createCalendar)
@@ -30,6 +42,13 @@ export function mainCalendarKeyboard(language: Language) {
 
 export function createCalendarCancelKeyboard(language: Language) {
   return new InlineKeyboard().text(messages.cancelButton(language), callbackData.cancelCreateCalendar);
+}
+
+export function googleDisconnectConfirmKeyboard(language: Language) {
+  return new InlineKeyboard()
+    .text(messages.disconnectConfirmButton(language), callbackData.confirmGoogleDisconnect)
+    .row()
+    .text(messages.cancelButton(language), callbackData.cancelGoogleDisconnect);
 }
 
 export function formatCalendarsList(input: {
