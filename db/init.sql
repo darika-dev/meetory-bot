@@ -29,6 +29,24 @@ CREATE TABLE IF NOT EXISTS calendars (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS active_calendar_id BIGINT;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'users_active_calendar_id_fkey'
+  ) THEN
+    ALTER TABLE users
+      ADD CONSTRAINT users_active_calendar_id_fkey
+      FOREIGN KEY (active_calendar_id)
+      REFERENCES calendars(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS calendar_members (
   calendar_id BIGINT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -36,6 +54,16 @@ CREATE TABLE IF NOT EXISTS calendar_members (
   joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (calendar_id, user_id),
   UNIQUE (calendar_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS pending_actions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  payload JSONB NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id)
 );
 
 CREATE INDEX IF NOT EXISTS google_connections_user_id_idx
@@ -52,3 +80,9 @@ CREATE INDEX IF NOT EXISTS calendars_created_by_user_id_idx
 
 CREATE INDEX IF NOT EXISTS calendar_members_user_id_idx
   ON calendar_members(user_id);
+
+CREATE INDEX IF NOT EXISTS users_active_calendar_id_idx
+  ON users(active_calendar_id);
+
+CREATE INDEX IF NOT EXISTS pending_actions_expires_at_idx
+  ON pending_actions(expires_at);

@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { bot } from "../bot.js";
 import { createGoogleAuthorizationUrl, createGoogleOAuthClient, getGoogleEmail } from "../google/oauth.js";
+import { getLanguage, messages } from "../i18n.js";
+import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
 import * as usersRepository from "../repositories/users.js";
 import { verifyOAuthState } from "../security/oauthState.js";
 import { encryptToken } from "../security/tokenEncryption.js";
+import { mainCalendarKeyboard, noCalendarsKeyboard } from "../telegramScreens.js";
 
 export const googleRouter = Router();
 
@@ -20,6 +23,22 @@ function html(message: string) {
     <p>${message}</p>
   </body>
 </html>`;
+}
+
+async function getActiveOrFirstCalendar(userId: string) {
+  const activeCalendar = await calendarsRepository.findActiveForUser(userId);
+
+  if (activeCalendar) {
+    return activeCalendar;
+  }
+
+  const firstCalendar = await calendarsRepository.findFirstForUser(userId);
+
+  if (firstCalendar) {
+    await usersRepository.setActiveCalendar(userId, firstCalendar.id);
+  }
+
+  return firstCalendar;
 }
 
 googleRouter.get("/oauth", (req, res) => {
@@ -84,18 +103,40 @@ googleRouter.get("/callback", async (req, res) => {
       );
     }
 
-    const isRussian = user.language === "ru";
-    const successMessage = isRussian
+    const language = getLanguage(user.language);
+    const callbackMessage = language === "ru"
       ? "Google Calendar подключён. Вернитесь в Telegram."
       : "Google Calendar connected. Return to Telegram.";
 
     try {
-      await bot?.api.sendMessage(user.telegram_id, successMessage);
+      const calendars = await calendarsRepository.findForUser(user.id);
+
+      if (calendars.length === 0) {
+        await bot?.api.sendMessage(user.telegram_id, [
+          language === "ru" ? "Google Calendar подключён." : "Google Calendar connected.",
+          "",
+          messages.noCalendars(language),
+        ].join("\n"), {
+          reply_markup: noCalendarsKeyboard(language),
+        });
+      } else {
+        const activeCalendar = await getActiveOrFirstCalendar(user.id);
+
+        if (activeCalendar) {
+          await bot?.api.sendMessage(user.telegram_id, messages.welcomeBack(language, activeCalendar.name), {
+            reply_markup: mainCalendarKeyboard(language),
+          });
+        } else {
+          await bot?.api.sendMessage(user.telegram_id, messages.noCalendars(language), {
+            reply_markup: noCalendarsKeyboard(language),
+          });
+        }
+      }
     } catch {
       // The browser callback should still succeed if Telegram delivery fails.
     }
 
-    return res.send(html(successMessage));
+    return res.send(html(callbackMessage));
   } catch {
     return res.status(400).send(html("Google Calendar connection failed. Please try again."));
   }

@@ -11,7 +11,13 @@ export type CalendarMember = {
   joined_at: Date;
 };
 
-export async function addMember(calendarId: string, userId: string, role: CalendarRole = "member") {
+export type CalendarMemberInput = {
+  calendarId: string;
+  userId: string;
+  role?: CalendarRole;
+};
+
+export async function addMember(input: CalendarMemberInput) {
   const rows = await sql`
     INSERT INTO calendar_members (
       calendar_id,
@@ -19,9 +25,9 @@ export async function addMember(calendarId: string, userId: string, role: Calend
       role
     )
     VALUES (
-      ${calendarId},
-      ${userId},
-      ${role}
+      ${input.calendarId},
+      ${input.userId},
+      ${input.role ?? "member"}
     )
     ON CONFLICT (calendar_id, user_id)
     DO UPDATE SET role = EXCLUDED.role
@@ -29,6 +35,18 @@ export async function addMember(calendarId: string, userId: string, role: Calend
   ` as CalendarMember[];
 
   return rows[0];
+}
+
+export async function isMember(userId: string, calendarId: string) {
+  const rows = await sql`
+    SELECT 1
+    FROM calendar_members
+    WHERE user_id = ${userId}
+      AND calendar_id = ${calendarId}
+    LIMIT 1
+  ` as Array<{ "?column?": number }>;
+
+  return rows.length > 0;
 }
 
 export async function removeMember(calendarId: string, userId: string) {

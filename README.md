@@ -2,7 +2,7 @@
 
 Meetory is a Telegram bot built with Node.js, TypeScript, grammY, Express, Vercel, Neon PostgreSQL, and Google Calendar API.
 
-PostgreSQL stores only users, Google OAuth connections, shared calendar records, and calendar membership metadata. Events are not stored in PostgreSQL. Events must live only in Google Calendar.
+PostgreSQL stores only users, Google OAuth connections, shared calendar records, calendar membership metadata, and short-lived pending bot actions. Events are not stored in PostgreSQL. Events must live only in Google Calendar.
 
 ## Public Routes
 
@@ -116,6 +116,12 @@ Start the local Express server:
 yarn start
 ```
 
+For local Telegram bot testing without an HTTPS tunnel, run long polling:
+
+```bash
+yarn bot:polling
+```
+
 For local Telegram webhook testing, expose the local server with an HTTPS tunnel and set `APP_URL` to the tunnel URL.
 
 ## Vercel Deploy
@@ -125,13 +131,14 @@ For local Telegram webhook testing, expose the local server with an HTTPS tunnel
 3. Initialize the database from a local machine with production `DATABASE_URL`:
 
 ```bash
-yarn db:init
+yarn db:init:production
 ```
 
-4. Set the Telegram webhook:
+4. Set the Telegram webhook and command menu:
 
 ```bash
-yarn webhook:set
+yarn webhook:set:production
+yarn commands:set:production
 ```
 
 The webhook URL is:
@@ -163,6 +170,7 @@ Tables:
 - `google_connections`
 - `calendars`
 - `calendar_members`
+- `pending_actions`
 
 There is intentionally no `events` table. When Meetory saves an event later, it should:
 
@@ -171,9 +179,15 @@ There is intentionally no `events` table. When Meetory saves an event later, it 
 3. load the Google credentials for the owner connection of that calendar;
 4. create the event through the Google Calendar API.
 
+## Implemented Bot Commands
+
+- `/start`
+- `/newcalendar`
+- `/calendars`
+- `/help`
+
 ## Not Implemented Yet
 
-- Google calendar creation
 - inviting calendar members
 - `calendar_members` UI
 - event creation
