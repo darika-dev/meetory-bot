@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { bot } from "../bot.js";
-import { createGoogleAuthorizationUrl, createGoogleOAuthClient, getGoogleEmail } from "../google/oauth.js";
+import {
+  createGoogleAuthorizationUrl,
+  createGoogleOAuthClient,
+  getGoogleEmail,
+  GOOGLE_OAUTH_SCOPES,
+} from "../google/oauth.js";
 import { getLanguage, messages } from "../i18n.js";
 import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
@@ -49,6 +54,32 @@ async function getActiveOrFirstCalendar(userId: string) {
   }
 
   return firstCalendar;
+}
+
+function hasGrantedCalendarScope(scope?: string | null) {
+  if (!scope) {
+    return false;
+  }
+
+  return scope.split(/\s+/).includes(GOOGLE_OAUTH_SCOPES[0]);
+}
+
+async function revokeGrantedToken(token?: string | null) {
+  if (!token) {
+    return;
+  }
+
+  try {
+    const oauth2Client = createGoogleOAuthClient();
+
+    await oauth2Client.revokeToken(token);
+  } catch (error) {
+    console.error("Google OAuth token revoke failed:", {
+      operation: "revoke_partial_oauth_token",
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 googleRouter.get("/oauth", (req, res) => {
@@ -155,6 +186,22 @@ googleRouter.get("/callback", async (req, res) => {
       return res.status(400).send(html("Google did not return an access token. Please try again."));
     }
 
+    const language = getLanguage(user.language);
+
+    if (!hasGrantedCalendarScope(credentials.scope)) {
+      await revokeGrantedToken(credentials.refresh_token ?? credentials.access_token);
+
+      try {
+        await bot?.api.sendMessage(user.telegram_id, messages.oauthCalendarScopeMissingTelegram(language), {
+          reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
+        });
+      } catch {
+        // The browser callback should still succeed if Telegram delivery fails.
+      }
+
+      return res.status(400).send(html(messages.oauthCalendarScopeMissingBrowser(language)));
+    }
+
     const googleEmail = await getGoogleEmail(credentials.access_token);
 
     if (!googleEmail) {
@@ -177,7 +224,6 @@ googleRouter.get("/callback", async (req, res) => {
       );
     }
 
-    const language = getLanguage(user.language);
     const callbackMessage = language === "ru"
       ? `${messages.googleConnected(language)} Вернитесь в Telegram.`
       : `${messages.googleConnected(language)} Return to Telegram.`;

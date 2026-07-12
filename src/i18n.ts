@@ -56,6 +56,16 @@ export const messages = {
       ? "Google Календарь не был подключён.\n\nВы можете попробовать снова, когда будете готовы."
       : "Google Calendar wasn't connected.\n\nYou can try again whenever you're ready.";
   },
+  oauthCalendarScopeMissingBrowser(language: Language) {
+    return language === "ru"
+      ? "Доступ к Google Календарю не был предоставлен.\n\nВы можете закрыть эту страницу и попробовать подключение снова в Telegram."
+      : "Google Calendar access wasn't granted.\n\nYou can close this page and try connecting again in Telegram.";
+  },
+  oauthCalendarScopeMissingTelegram(language: Language) {
+    return language === "ru"
+      ? "Google Календарь не был подключён, потому что доступ к календарю не был предоставлен.\n\nВы можете попробовать снова, когда будете готовы."
+      : "Google Calendar wasn't connected because calendar access wasn't granted.\n\nYou can try again whenever you're ready.";
+  },
   oauthGenericErrorBrowser(language: Language) {
     return language === "ru"
       ? "Не удалось подключить Google Календарь.\n\nВернитесь в Telegram и попробуйте ещё раз."
