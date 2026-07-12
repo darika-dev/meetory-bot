@@ -107,6 +107,10 @@ export async function clearActiveCalendar(calendarId: string) {
   `;
 }
 
+export async function clearActiveCalendarByCalendarId(calendarId: string) {
+  return clearActiveCalendar(calendarId);
+}
+
 export async function chooseFallbackActiveCalendar(userId: string) {
   const rows = await sql`
     WITH fallback AS (

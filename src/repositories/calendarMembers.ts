@@ -49,6 +49,18 @@ export async function isMember(userId: string, calendarId: string) {
   return rows.length > 0;
 }
 
+export async function getRole(userId: string, calendarId: string) {
+  const rows = await sql`
+    SELECT role
+    FROM calendar_members
+    WHERE user_id = ${userId}
+      AND calendar_id = ${calendarId}
+    LIMIT 1
+  ` as Array<{ role: CalendarRole }>;
+
+  return rows[0]?.role ?? null;
+}
+
 export async function removeMember(calendarId: string, userId: string) {
   await sql`
     DELETE FROM calendar_members
@@ -79,6 +91,10 @@ export async function getCalendarsForUser(userId: string) {
 }
 
 export async function findCalendarsForUser(userId: string) {
+  return getCalendarsForUser(userId);
+}
+
+export async function findUserCalendars(userId: string) {
   return getCalendarsForUser(userId);
 }
 

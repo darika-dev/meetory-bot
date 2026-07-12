@@ -8,6 +8,14 @@ export type CalendarListItem = {
   summary: string;
 };
 
+export function calendarCallbackData(action: "open" | "activate" | "rename" | "delete", calendarId: string) {
+  return `calendar:${action}:${calendarId}`;
+}
+
+export function calendarDeleteCallbackData(action: "confirm" | "cancel", calendarId: string) {
+  return `calendar:delete:${action}:${calendarId}`;
+}
+
 export function connectGoogleKeyboard(telegramUserId: string, language: Language) {
   const url = `${getAppBaseUrl()}/google/oauth?state=${encodeURIComponent(createOAuthState(telegramUserId))}`;
 
@@ -48,6 +56,10 @@ export function createCalendarCancelKeyboard(language: Language) {
   return new InlineKeyboard().text(messages.cancelButton(language), callbackData.cancelCreateCalendar);
 }
 
+export function renameCalendarCancelKeyboard(language: Language) {
+  return new InlineKeyboard().text(messages.cancelButton(language), callbackData.cancelRenameCalendar);
+}
+
 export function googleDisconnectConfirmKeyboard(language: Language) {
   return new InlineKeyboard()
     .text(messages.disconnectConfirmButton(language), callbackData.confirmGoogleDisconnect)
@@ -76,4 +88,58 @@ export function formatCalendarsList(input: {
   lines.push("", "────────────", "", messages.newCalendarButton(input.language));
 
   return lines.join("\n");
+}
+
+export function calendarsListKeyboard(input: {
+  language: Language;
+  calendars: CalendarListItem[];
+  activeCalendarId: string | null;
+}) {
+  const keyboard = new InlineKeyboard();
+
+  for (const calendar of input.calendars) {
+    const prefix = calendar.id === input.activeCalendarId ? "✅" : "📅";
+
+    keyboard.text(`${prefix} ${calendar.summary}`, calendarCallbackData("open", calendar.id)).row();
+  }
+
+  keyboard
+    .text(messages.newCalendarButton(input.language), callbackData.createCalendar)
+    .row()
+    .text(messages.backButton(input.language), callbackData.mainMenu);
+
+  return keyboard;
+}
+
+export function calendarCardKeyboard(input: {
+  language: Language;
+  calendarId: string;
+  isActive: boolean;
+}) {
+  const keyboard = new InlineKeyboard();
+
+  if (!input.isActive) {
+    keyboard.text(messages.makeActiveButton(input.language), calendarCallbackData("activate", input.calendarId)).row();
+  }
+
+  return keyboard
+    .text(messages.renameButton(input.language), calendarCallbackData("rename", input.calendarId))
+    .row()
+    .text(messages.deleteButton(input.language), calendarCallbackData("delete", input.calendarId))
+    .row()
+    .text(messages.backButton(input.language), callbackData.listCalendars);
+}
+
+export function calendarDeleteConfirmKeyboard(language: Language, calendarId: string) {
+  return new InlineKeyboard()
+    .text(messages.deleteForeverButton(language), calendarDeleteCallbackData("confirm", calendarId))
+    .row()
+    .text(messages.cancelButton(language), calendarDeleteCallbackData("cancel", calendarId));
+}
+
+export function calendarBackKeyboard(language: Language, calendarId: string) {
+  return new InlineKeyboard()
+    .text(messages.calendarsButton(language), callbackData.listCalendars)
+    .row()
+    .text(messages.backButton(language), calendarCallbackData("open", calendarId));
 }

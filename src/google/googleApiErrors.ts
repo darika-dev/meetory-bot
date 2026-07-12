@@ -4,6 +4,7 @@ export type GoogleApiErrorKind =
   | "oauth_invalid"
   | "rate_limited"
   | "temporary_google_error"
+  | "primary_calendar"
   | "unknown";
 
 function getStatus(error: unknown) {
@@ -93,6 +94,10 @@ export function classifyGoogleApiError(error: unknown): GoogleApiErrorKind {
 
   if (status === 500 || status === 502 || status === 503 || status === 504) {
     return "temporary_google_error";
+  }
+
+  if (message.includes("primary_google_calendar")) {
+    return "primary_calendar";
   }
 
   if (

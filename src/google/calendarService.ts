@@ -19,6 +19,7 @@ export type GoogleCalendarMetadata = {
   description: string | null;
   timeZone: string | null;
   accessRole: string | null;
+  primary: boolean;
 };
 
 export type CalendarAvailability =
@@ -81,6 +82,13 @@ export async function createCalendarForUser(input: {
 }
 
 export async function getCalendarMetadata(calendarRecord: Calendar) {
+  return getCalendarMetadataByGoogleId({
+    connection: await getCalendarConnection(calendarRecord),
+    googleCalendarId: calendarRecord.google_calendar_id,
+  });
+}
+
+async function getCalendarConnection(calendarRecord: Calendar) {
   const connection = calendarRecord.google_connection_id
     ? await googleConnectionsRepository.findById(calendarRecord.google_connection_id)
     : await googleConnectionsRepository.findByUserId(calendarRecord.created_by_user_id);
@@ -89,10 +97,7 @@ export async function getCalendarMetadata(calendarRecord: Calendar) {
     throw new Error("Google connection not found");
   }
 
-  return getCalendarMetadataByGoogleId({
-    connection,
-    googleCalendarId: calendarRecord.google_calendar_id,
-  });
+  return connection;
 }
 
 export async function getCalendarMetadataByGoogleId(input: {
@@ -114,6 +119,26 @@ export async function getCalendarMetadataByGoogleId(input: {
     description: response.data.description ?? null,
     timeZone: response.data.timeZone ?? null,
     accessRole: null,
+    primary: false,
+  } satisfies GoogleCalendarMetadata;
+}
+
+export async function getCalendarListMetadataByGoogleId(input: {
+  connection: GoogleConnection;
+  googleCalendarId: string;
+}) {
+  const calendar = buildAuthorizedCalendarClient(input.connection);
+  const response = await calendar.calendarList.get({
+    calendarId: input.googleCalendarId,
+  });
+
+  return {
+    id: response.data.id ?? input.googleCalendarId,
+    summary: response.data.summary ?? "",
+    description: response.data.description ?? null,
+    timeZone: response.data.timeZone ?? null,
+    accessRole: response.data.accessRole ?? null,
+    primary: response.data.primary === true,
   } satisfies GoogleCalendarMetadata;
 }
 
@@ -153,6 +178,23 @@ export async function deleteGoogleCalendar(input: {
   });
 }
 
+export async function deleteRegistryGoogleCalendar(calendarRecord: Calendar) {
+  const connection = await getCalendarConnection(calendarRecord);
+  const metadata = await getCalendarListMetadataByGoogleId({
+    connection,
+    googleCalendarId: calendarRecord.google_calendar_id,
+  });
+
+  if (metadata.primary) {
+    throw new Error("primary_google_calendar");
+  }
+
+  await deleteGoogleCalendar({
+    connection,
+    googleCalendarId: calendarRecord.google_calendar_id,
+  });
+}
+
 export async function deleteCalendarForUser(input: {
   connection: GoogleConnection;
   googleCalendarId: string;
@@ -161,13 +203,12 @@ export async function deleteCalendarForUser(input: {
 }
 
 export async function renameGoogleCalendar(input: {
-  connection: GoogleConnection;
-  googleCalendarId: string;
+  calendarRecord: Calendar;
   name: string;
 }) {
-  const calendar = buildAuthorizedCalendarClient(input.connection);
+  const calendar = buildAuthorizedCalendarClient(await getCalendarConnection(input.calendarRecord));
   const response = await calendar.calendars.patch({
-    calendarId: input.googleCalendarId,
+    calendarId: input.calendarRecord.google_calendar_id,
     requestBody: {
       summary: input.name,
     },
@@ -183,5 +224,6 @@ export async function renameGoogleCalendar(input: {
     description: response.data.description ?? null,
     timeZone: response.data.timeZone ?? null,
     accessRole: null,
+    primary: false,
   } satisfies GoogleCalendarMetadata;
 }

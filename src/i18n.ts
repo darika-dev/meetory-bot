@@ -7,6 +7,8 @@ export const callbackData = {
   inviteUnavailable: "invite:unavailable",
   confirmGoogleDisconnect: "google:disconnect:confirm",
   cancelGoogleDisconnect: "google:disconnect:cancel",
+  cancelRenameCalendar: "calendar:rename:cancel",
+  mainMenu: "main:menu",
 } as const;
 
 export function getLanguage(language?: string | null): Language {
@@ -171,6 +173,100 @@ export const messages = {
       ? `Недоступные календари: ${count}.`
       : `Unavailable calendars: ${count}.`;
   },
+  calendarNotFoundOrAccessDenied(language: Language) {
+    return language === "ru"
+      ? "Календарь не найден или доступ запрещён."
+      : "Calendar not found or access denied.";
+  },
+  calendarCard(language: Language, calendarName: string, isActive: boolean) {
+    if (language === "ru") {
+      return isActive
+        ? `📅 ${calendarName}\n\nЭто ваш активный календарь.`
+        : `📅 ${calendarName}\n\nЧто хотите сделать?`;
+    }
+
+    return isActive
+      ? `📅 ${calendarName}\n\nThis is your active calendar.`
+      : `📅 ${calendarName}\n\nWhat would you like to do?`;
+  },
+  activeCalendarChanged(language: Language, calendarName: string) {
+    return language === "ru"
+      ? `✅ Активный календарь изменён.\n\nТекущий календарь:\n📅 ${calendarName}`
+      : `✅ Active calendar changed.\n\nCurrent calendar:\n📅 ${calendarName}`;
+  },
+  calendarAlreadyActive(language: Language) {
+    return language === "ru" ? "Этот календарь уже активен." : "This calendar is already active.";
+  },
+  renameOwnerOnly(language: Language) {
+    return language === "ru"
+      ? "Переименовать календарь может только владелец."
+      : "Only the calendar owner can rename it.";
+  },
+  deleteOwnerOnly(language: Language) {
+    return language === "ru"
+      ? "Удалить календарь может только владелец."
+      : "Only the calendar owner can delete it.";
+  },
+  renameCalendarPrompt(language: Language, calendarName: string) {
+    return language === "ru"
+      ? `Текущее название:\n\n${calendarName}\n\nОтправьте новое название календаря.`
+      : `Current name:\n\n${calendarName}\n\nSend a new calendar name.`;
+  },
+  renameCalendarCancelled(language: Language) {
+    return language === "ru" ? "Переименование календаря отменено." : "Calendar rename cancelled.";
+  },
+  renameCalendarSuccess(language: Language, calendarName: string) {
+    return language === "ru"
+      ? `✅ Календарь переименован.\n\nНовое название:\n📅 ${calendarName}`
+      : `✅ Calendar renamed.\n\nNew name:\n📅 ${calendarName}`;
+  },
+  deleteCalendarConfirm(language: Language, calendarName: string) {
+    return language === "ru"
+      ? [
+          `⚠️ Удалить календарь «${calendarName}»?`,
+          "",
+          "Это действие нельзя отменить.",
+          "",
+          "Календарь и все его события будут навсегда удалены из Google Calendar.",
+          "",
+          "Участники Meetory потеряют доступ.",
+        ].join("\n")
+      : [
+          `⚠️ Delete calendar “${calendarName}”?`,
+          "",
+          "This action cannot be undone.",
+          "",
+          "The calendar and all its events will be permanently deleted from Google Calendar.",
+          "",
+          "Meetory members will lose access.",
+        ].join("\n");
+  },
+  deleteCalendarCancelled(language: Language) {
+    return language === "ru" ? "Удаление календаря отменено." : "Calendar deletion cancelled.";
+  },
+  deleteCalendarSuccess(language: Language) {
+    return language === "ru" ? "✅ Календарь удалён." : "✅ Calendar deleted.";
+  },
+  deleteCalendarSuccessWithFallback(language: Language, calendarName: string) {
+    return language === "ru"
+      ? `✅ Календарь удалён.\n\nАктивным выбран календарь:\n📅 ${calendarName}`
+      : `✅ Calendar deleted.\n\nActive calendar changed to:\n📅 ${calendarName}`;
+  },
+  deleteCalendarSuccessChooseActive(language: Language) {
+    return language === "ru"
+      ? "✅ Календарь удалён.\n\nВыберите другой активный календарь."
+      : "✅ Calendar deleted.\n\nChoose another active calendar.";
+  },
+  deleteCalendarSuccessNoCalendars(language: Language) {
+    return language === "ru"
+      ? "✅ Календарь удалён.\n\nУ вас пока нет календарей."
+      : "✅ Calendar deleted.\n\nYou don't have any calendars yet.";
+  },
+  primaryCalendarDeleteDenied(language: Language) {
+    return language === "ru"
+      ? "Meetory не может удалить основной Google Календарь."
+      : "The primary Google Calendar cannot be deleted by Meetory.";
+  },
   help(language: Language) {
     return language === "ru"
       ? "Команды:\n/start — открыть главное меню\n/newcalendar — создать календарь\n/calendars — показать календари\n/disconnect — отключить Google Calendar\n/help — помощь"
@@ -259,6 +355,21 @@ export const messages = {
   },
   cancelButton(language: Language) {
     return language === "ru" ? "✖️ Отмена" : "✖️ Cancel";
+  },
+  backButton(language: Language) {
+    return language === "ru" ? "🔙 Назад" : "🔙 Back";
+  },
+  makeActiveButton(language: Language) {
+    return language === "ru" ? "⭐ Сделать активным" : "⭐ Make active";
+  },
+  renameButton(language: Language) {
+    return language === "ru" ? "✏️ Переименовать" : "✏️ Rename";
+  },
+  deleteButton(language: Language) {
+    return language === "ru" ? "🗑 Удалить" : "🗑 Delete";
+  },
+  deleteForeverButton(language: Language) {
+    return language === "ru" ? "🗑 Удалить навсегда" : "🗑 Delete forever";
   },
   disconnectConfirmButton(language: Language) {
     return language === "ru" ? "Отключить Google" : "Disconnect Google";
