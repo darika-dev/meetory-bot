@@ -4,7 +4,8 @@ export type GoogleConnection = {
   id: string;
   user_id: string;
   google_email: string;
-  encrypted_refresh_token: string;
+  encrypted_refresh_token: string | null;
+  status: "connected" | "disconnected";
   created_at: Date;
   updated_at: Date;
 };
@@ -27,7 +28,7 @@ export async function create(input: GoogleConnectionInput) {
       ${input.googleEmail},
       ${input.encryptedRefreshToken}
     )
-    RETURNING id, user_id, google_email, encrypted_refresh_token, created_at, updated_at
+    RETURNING id, user_id, google_email, encrypted_refresh_token, status, created_at, updated_at
   ` as GoogleConnection[];
 
   return rows[0];
@@ -39,9 +40,10 @@ export async function update(id: string, input: Pick<GoogleConnectionInput, "goo
     SET
       google_email = ${input.googleEmail},
       encrypted_refresh_token = ${input.encryptedRefreshToken},
+      status = 'connected',
       updated_at = NOW()
     WHERE id = ${id}
-    RETURNING id, user_id, google_email, encrypted_refresh_token, created_at, updated_at
+    RETURNING id, user_id, google_email, encrypted_refresh_token, status, created_at, updated_at
   ` as GoogleConnection[];
 
   return rows[0] ?? null;
@@ -49,7 +51,7 @@ export async function update(id: string, input: Pick<GoogleConnectionInput, "goo
 
 export async function findByUser(userId: string) {
   const rows = await sql`
-    SELECT id, user_id, google_email, encrypted_refresh_token, created_at, updated_at
+    SELECT id, user_id, google_email, encrypted_refresh_token, status, created_at, updated_at
     FROM google_connections
     WHERE user_id = ${userId}
     ORDER BY created_at DESC
@@ -60,9 +62,22 @@ export async function findByUser(userId: string) {
 
 export async function findByUserId(userId: string) {
   const rows = await sql`
-    SELECT id, user_id, google_email, encrypted_refresh_token, created_at, updated_at
+    SELECT id, user_id, google_email, encrypted_refresh_token, status, created_at, updated_at
     FROM google_connections
     WHERE user_id = ${userId}
+      AND status = 'connected'
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT 1
+  ` as GoogleConnection[];
+
+  return rows[0] ?? null;
+}
+
+export async function findById(id: string) {
+  const rows = await sql`
+    SELECT id, user_id, google_email, encrypted_refresh_token, status, created_at, updated_at
+    FROM google_connections
+    WHERE id = ${id}
     LIMIT 1
   ` as GoogleConnection[];
 
@@ -81,12 +96,12 @@ export async function upsert(input: GoogleConnectionInput) {
       ${input.googleEmail},
       ${input.encryptedRefreshToken}
     )
-    ON CONFLICT (user_id)
+    ON CONFLICT (user_id, google_email)
     DO UPDATE SET
-      google_email = EXCLUDED.google_email,
       encrypted_refresh_token = EXCLUDED.encrypted_refresh_token,
+      status = 'connected',
       updated_at = NOW()
-    RETURNING id, user_id, google_email, encrypted_refresh_token, created_at, updated_at
+    RETURNING id, user_id, google_email, encrypted_refresh_token, status, created_at, updated_at
   ` as GoogleConnection[];
 
   return rows[0];
@@ -99,15 +114,23 @@ export async function updateEmail(userId: string, googleEmail: string) {
       google_email = ${googleEmail},
       updated_at = NOW()
     WHERE user_id = ${userId}
-    RETURNING id, user_id, google_email, encrypted_refresh_token, created_at, updated_at
+      AND status = 'connected'
+    RETURNING id, user_id, google_email, encrypted_refresh_token, status, created_at, updated_at
   ` as GoogleConnection[];
 
   return rows[0] ?? null;
 }
 
-export async function deleteByUserId(userId: string) {
-  await sql`
-    DELETE FROM google_connections
-    WHERE user_id = ${userId}
-  `;
+export async function markDisconnected(id: string) {
+  const rows = await sql`
+    UPDATE google_connections
+    SET
+      encrypted_refresh_token = NULL,
+      status = 'disconnected',
+      updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING id, user_id, google_email, encrypted_refresh_token, status, created_at, updated_at
+  ` as GoogleConnection[];
+
+  return rows[0] ?? null;
 }

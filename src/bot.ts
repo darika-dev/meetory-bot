@@ -3,7 +3,12 @@ import * as calendarsRepository from "./repositories/calendars.js";
 import * as googleConnectionsRepository from "./repositories/googleConnections.js";
 import * as pendingActionsRepository from "./repositories/pendingActions.js";
 import * as usersRepository from "./repositories/users.js";
-import { createCalendarForUser, deleteCalendarForUser } from "./google/calendarService.js";
+import {
+  cleanupDeletedCalendar,
+  createCalendarForUser,
+  deleteCalendarForUser,
+  listMeetoryCalendarsForUser,
+} from "./google/calendarService.js";
 import { revokeGoogleConnectionRefreshToken } from "./google/oauth.js";
 import { getLanguage, getTelegramLanguage, messages } from "./i18n.js";
 import {
@@ -36,6 +41,8 @@ type ReplyTarget = {
   reply: Context["reply"];
 };
 
+type ResolvedCalendarList = Awaited<ReturnType<typeof resolveCalendarsForUser>>;
+
 export const bot = createBot();
 
 bot?.catch((error) => {
@@ -62,20 +69,66 @@ async function upsertTelegramUser(ctx: Context) {
   });
 }
 
-async function getActiveOrFirstCalendar(userId: string) {
-  const activeCalendar = await calendarsRepository.findActiveForUser(userId);
+async function resolveCalendarsForUser(user: usersRepository.User) {
+  const checkedCalendars = await listMeetoryCalendarsForUser(user.id);
+  const available = checkedCalendars
+    .filter((result) => result.status === "available")
+    .map((result) => ({
+      id: result.calendar.id,
+      summary: result.metadata.summary,
+    }));
+  const deleted = checkedCalendars.filter((result) => result.status === "calendar_not_found");
+  const accessDenied = checkedCalendars.filter((result) => result.status === "calendar_access_denied");
+  const oauthInvalid = checkedCalendars.filter((result) => result.status === "oauth_invalid");
+  const temporaryFailures = checkedCalendars.filter((result) =>
+    result.status === "rate_limited" || result.status === "temporary_google_error" || result.status === "unknown"
+  );
 
-  if (activeCalendar) {
-    return activeCalendar;
+  for (const deletedCalendar of deleted) {
+    await cleanupDeletedCalendar(deletedCalendar.calendar);
   }
 
-  const firstCalendar = await calendarsRepository.findFirstForUser(userId);
+  let activeCalendarId = user.active_calendar_id;
 
-  if (firstCalendar) {
-    await usersRepository.setActiveCalendar(userId, firstCalendar.id);
+  if (activeCalendarId && !available.some((calendar) => calendar.id === activeCalendarId)) {
+    activeCalendarId = null;
   }
 
-  return firstCalendar;
+  if (!activeCalendarId && available[0]) {
+    await usersRepository.setActiveCalendar(user.id, available[0].id);
+    activeCalendarId = available[0].id;
+  }
+
+  return {
+    available,
+    activeCalendarId,
+    deletedCount: deleted.length,
+    accessDeniedCount: accessDenied.length,
+    oauthInvalidCount: oauthInvalid.length,
+    temporaryFailureCount: temporaryFailures.length,
+  };
+}
+
+function recoveryMessages(language: ReturnType<typeof getLanguage>, resolved: ResolvedCalendarList) {
+  const lines: string[] = [];
+
+  if (resolved.deletedCount > 0) {
+    lines.push(messages.calendarDeletedInGoogle(language));
+  }
+
+  if (resolved.accessDeniedCount > 0) {
+    lines.push(messages.calendarAccessLost(language));
+  }
+
+  if (resolved.oauthInvalidCount > 0) {
+    lines.push(messages.googleConnectionExpired(language));
+  }
+
+  if (resolved.temporaryFailureCount > 0) {
+    lines.push(messages.googleCalendarTemporaryUnavailable(language));
+  }
+
+  return lines;
 }
 
 async function showHome(target: ReplyTarget, user: usersRepository.User) {
@@ -88,23 +141,102 @@ async function showHome(target: ReplyTarget, user: usersRepository.User) {
     });
   }
 
-  const calendars = await calendarsRepository.findForUser(user.id);
+  const calendarRecords = await calendarsRepository.findForUser(user.id);
 
-  if (calendars.length === 0) {
+  if (calendarRecords.length === 0) {
     return target.reply(messages.noCalendars(language), {
       reply_markup: noCalendarsKeyboard(language),
     });
   }
 
-  const activeCalendar = await getActiveOrFirstCalendar(user.id);
+  const resolved = await resolveCalendarsForUser(user);
+  const activeCalendar = resolved.available.find((calendar) => calendar.id === resolved.activeCalendarId);
+  const notices = recoveryMessages(language, resolved);
 
-  if (!activeCalendar) {
+  if (activeCalendar) {
+    return target.reply([
+      ...notices,
+      notices.length > 0 ? "" : null,
+      messages.welcomeBack(language, activeCalendar.summary),
+    ].filter((line): line is string => line !== null).join("\n"), {
+      reply_markup: mainCalendarKeyboard(language),
+    });
+  }
+
+  if (resolved.oauthInvalidCount > 0 || resolved.accessDeniedCount > 0) {
+    return target.reply(notices.join("\n\n"), {
+      reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
+    });
+  }
+
+  if (resolved.temporaryFailureCount > 0) {
+    return target.reply(notices.join("\n\n"));
+  }
+
+  if (resolved.deletedCount > 0) {
+    return target.reply([
+      ...notices,
+      "",
+      messages.noCalendars(language),
+    ].join("\n"), {
+      reply_markup: noCalendarsKeyboard(language),
+    });
+  }
+
+  return target.reply(messages.noCalendars(language), {
+    reply_markup: noCalendarsKeyboard(language),
+  });
+}
+
+async function replyCalendarsList(target: ReplyTarget, user: usersRepository.User) {
+  const language = getLanguage(user.language);
+  const calendarRecords = await calendarsRepository.findForUser(user.id);
+
+  if (calendarRecords.length === 0) {
+    return target.reply(messages.emptyCalendarsList(language), {
+      reply_markup: emptyCalendarsKeyboard(language),
+    });
+  }
+
+  const resolved = await resolveCalendarsForUser(user);
+  const notices = recoveryMessages(language, resolved);
+
+  if (resolved.available.length === 0) {
+    if (resolved.oauthInvalidCount > 0 || resolved.accessDeniedCount > 0) {
+      return target.reply(notices.join("\n\n"), {
+        reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
+      });
+    }
+
+    if (resolved.temporaryFailureCount > 0) {
+      return target.reply(notices.join("\n\n"));
+    }
+
+    if (resolved.deletedCount > 0) {
+      return target.reply([
+        ...notices,
+        "",
+        messages.emptyCalendarsList(language),
+      ].join("\n"), {
+        reply_markup: emptyCalendarsKeyboard(language),
+      });
+    }
+
     return target.reply(messages.noCalendars(language), {
       reply_markup: noCalendarsKeyboard(language),
     });
   }
 
-  return target.reply(messages.welcomeBack(language, activeCalendar.name), {
+  return target.reply([
+    ...notices,
+    notices.length > 0 ? "" : null,
+    formatCalendarsList({
+      language,
+      calendars: resolved.available,
+      activeCalendarId: resolved.activeCalendarId,
+      inaccessibleCount: resolved.accessDeniedCount + resolved.oauthInvalidCount + resolved.temporaryFailureCount,
+    }),
+  ].filter((line): line is string => line !== null).join("\n"), {
     reply_markup: mainCalendarKeyboard(language),
   });
 }
@@ -126,27 +258,6 @@ async function startCreateCalendarFlow(target: ReplyTarget, user: usersRepositor
 
   return target.reply(messages.createCalendarPrompt(language), {
     reply_markup: createCalendarCancelKeyboard(language),
-  });
-}
-
-async function showCalendars(target: ReplyTarget, user: usersRepository.User) {
-  const language = getLanguage(user.language);
-  const calendars = await calendarsRepository.findForUser(user.id);
-
-  if (calendars.length === 0) {
-    return target.reply(messages.emptyCalendarsList(language), {
-      reply_markup: emptyCalendarsKeyboard(language),
-    });
-  }
-
-  const activeCalendar = await getActiveOrFirstCalendar(user.id);
-
-  return target.reply(formatCalendarsList({
-    language,
-    calendars,
-    activeCalendarId: activeCalendar?.id ?? null,
-  }), {
-    reply_markup: mainCalendarKeyboard(language),
   });
 }
 
@@ -202,7 +313,7 @@ bot?.command("calendars", async (ctx) => {
     return ctx.reply("Meetory is running.");
   }
 
-  return showCalendars(ctx, user);
+  return replyCalendarsList(ctx, user);
 });
 
 bot?.command("help", async (ctx) => {
@@ -258,7 +369,7 @@ bot?.callbackQuery("calendar:list", async (ctx) => {
     return;
   }
 
-  return showCalendars(ctx, user);
+  return replyCalendarsList(ctx, user);
 });
 
 bot?.callbackQuery("invite:unavailable", async (ctx) => {
@@ -310,14 +421,14 @@ bot?.callbackQuery("google:disconnect:confirm", async (ctx) => {
       });
     }
 
-    await googleConnectionsRepository.deleteByUserId(user.id);
+    await googleConnectionsRepository.markDisconnected(googleConnection.id);
 
     return ctx.reply(messages.disconnectSuccess(language), {
       reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
     });
   } catch (error) {
     console.error("Google disconnect failed:", {
-      operation: "delete_google_connection",
+      operation: "disconnect_google_connection",
       userId: user.id,
       errorName: error instanceof Error ? error.name : typeof error,
       errorMessage: error instanceof Error ? error.message : String(error),
@@ -423,7 +534,7 @@ bot?.on("message:text", async (ctx) => {
     return ctx.reply(messages.genericCreateError(language));
   }
 
-  await ctx.reply(messages.creationSuccess(language, calendar.name), {
+  await ctx.reply(messages.creationSuccess(language, created.calendar.name), {
     reply_markup: mainCalendarKeyboard(language),
   });
 

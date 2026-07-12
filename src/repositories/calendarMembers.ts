@@ -66,6 +66,7 @@ export async function getCalendarsForUser(userId: string) {
       calendars.google_connection_id,
       calendars.created_by_user_id,
       calendars.created_at,
+      calendars.updated_at,
       calendar_members.role,
       calendar_members.joined_at
     FROM calendar_members
@@ -75,6 +76,17 @@ export async function getCalendarsForUser(userId: string) {
   ` as Array<Calendar & { role: CalendarRole; joined_at: Date }>;
 
   return rows;
+}
+
+export async function findCalendarsForUser(userId: string) {
+  return getCalendarsForUser(userId);
+}
+
+export async function deleteByCalendarId(calendarId: string) {
+  await sql`
+    DELETE FROM calendar_members
+    WHERE calendar_id = ${calendarId}
+  `;
 }
 
 export async function getMembers(calendarId: string) {

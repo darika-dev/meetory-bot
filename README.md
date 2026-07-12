@@ -2,7 +2,7 @@
 
 Meetory is a Telegram bot built with Node.js, TypeScript, grammY, Express, Vercel, Neon PostgreSQL, and Google Calendar API.
 
-PostgreSQL stores only users, Google OAuth connections, shared calendar records, calendar membership metadata, and short-lived pending bot actions. Events are not stored in PostgreSQL. Events must live only in Google Calendar.
+PostgreSQL stores only users, Google OAuth connections, Meetory calendar registry records, internal calendar membership metadata, and short-lived pending bot actions. Events and current Google Calendar metadata are not stored in PostgreSQL as the source of truth. Events, current calendar names, descriptions, time zones, Google ACLs, and Google access rights live in Google Calendar.
 
 ## Public Routes
 
@@ -88,7 +88,39 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=https://<your-vercel-domain>/google/callback
 ```
 
-Meetory requests only Google Calendar access and Google account email.
+Meetory requests only the scopes required for Google Calendar management and account email:
+
+```txt
+https://www.googleapis.com/auth/calendar
+openid
+email
+```
+
+## Architecture
+
+Google Calendar is the source of truth.
+
+```txt
+Google Calendar
+- Calendars
+- Events
+- ACL
+- Timezone
+- Description
+- Access rights
+
+↓
+
+Meetory
+- users
+- google_connections
+- calendars (registry)
+- calendar_members
+```
+
+Meetory stores only its own relationships and registry. It does not duplicate Google Calendar metadata as the authoritative state. Calendar names, descriptions, time zones, events, ACL, and effective Google permissions are read from Google Calendar when needed.
+
+`google_connections` are persistent account records. Disconnecting Google clears the stored refresh token and marks the connection as `disconnected`; it does not delete the connection row or detach existing `calendars.google_connection_id` references. Reconnecting the same Google email updates the existing connection and marks it `connected` again.
 
 ## Local Development
 
@@ -168,11 +200,15 @@ Tables:
 
 - `users`
 - `google_connections`
-- `calendars`
+- `calendars` as the Meetory registry: `google_calendar_id`, creator, owner connection, timestamps, plus legacy `name` cache for compatibility
 - `calendar_members`
 - `pending_actions`
 
-There is intentionally no `events` table. When Meetory saves an event later, it should:
+There is intentionally no `events` table. `calendars.name` is not used as the display source of truth; Meetory reads the current calendar summary from Google Calendar API when listing or selecting calendars.
+
+`/calendars` reads only calendars where the user exists in `calendar_members`. It does not import or display unrelated calendars from `calendarList.list()`.
+
+When Meetory saves an event later, it should:
 
 1. identify the Telegram user;
 2. ask which Meetory calendar to use;
@@ -194,3 +230,7 @@ There is intentionally no `events` table. When Meetory saves an event later, it 
 - AI parsing
 - reminders
 - cron jobs
+
+## Future Improvements
+
+- ACL reconciliation: Google ACL and Meetory `calendar_members` are not automatically synchronized yet. A future reconciliation flow should safely compare Google access with Meetory membership, handle revoked access, and avoid removing internal membership on temporary Google errors.

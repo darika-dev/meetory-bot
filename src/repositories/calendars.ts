@@ -2,11 +2,13 @@ import { sql } from "../db/client.js";
 
 export type Calendar = {
   id: string;
+  // Legacy cache only. Google Calendar metadata is the source of truth for display.
   name: string;
   google_calendar_id: string;
   google_connection_id: string | null;
   created_by_user_id: string;
   created_at: Date;
+  updated_at: Date;
 };
 
 export type CalendarInput = {
@@ -34,7 +36,7 @@ export async function create(input: CalendarInput) {
       ${input.googleConnectionId},
       ${input.createdByUserId}
     )
-    RETURNING id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at
+    RETURNING id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at, updated_at
   ` as Calendar[];
 
   return rows[0];
@@ -59,7 +61,7 @@ export async function createOwnedCalendarAndActivate(input: CreateOwnedCalendarI
         ${input.googleConnectionId},
         ${input.createdByUserId}
       )
-      RETURNING id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at
+      RETURNING id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at, updated_at
     ),
     created_member AS (
       INSERT INTO calendar_members (
@@ -84,7 +86,7 @@ export async function createOwnedCalendarAndActivate(input: CreateOwnedCalendarI
       WHERE user_id = ${input.ownerUserId}
       RETURNING id
     )
-    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at
+    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at, updated_at
     FROM created_calendar
   ` as Calendar[];
 
@@ -93,7 +95,7 @@ export async function createOwnedCalendarAndActivate(input: CreateOwnedCalendarI
 
 export async function findById(id: string) {
   const rows = await sql`
-    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at
+    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at, updated_at
     FROM calendars
     WHERE id = ${id}
     LIMIT 1
@@ -104,7 +106,7 @@ export async function findById(id: string) {
 
 export async function findByGoogleCalendarId(googleCalendarId: string) {
   const rows = await sql`
-    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at
+    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at, updated_at
     FROM calendars
     WHERE google_calendar_id = ${googleCalendarId}
     LIMIT 1
@@ -121,7 +123,8 @@ export async function findForUser(userId: string) {
       calendars.google_calendar_id,
       calendars.google_connection_id,
       calendars.created_by_user_id,
-      calendars.created_at
+      calendars.created_at,
+      calendars.updated_at
     FROM calendar_members
     INNER JOIN calendars ON calendars.id = calendar_members.calendar_id
     WHERE calendar_members.user_id = ${userId}
@@ -133,7 +136,7 @@ export async function findForUser(userId: string) {
 
 export async function findOwnedByUser(userId: string) {
   const rows = await sql`
-    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at
+    SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at, updated_at
     FROM calendars
     WHERE created_by_user_id = ${userId}
     ORDER BY created_at ASC
@@ -150,7 +153,8 @@ export async function findActiveForUser(userId: string) {
       calendars.google_calendar_id,
       calendars.google_connection_id,
       calendars.created_by_user_id,
-      calendars.created_at
+      calendars.created_at,
+      calendars.updated_at
     FROM users
     INNER JOIN calendar_members
       ON calendar_members.user_id = users.id
@@ -171,7 +175,8 @@ export async function findFirstForUser(userId: string) {
       calendars.google_calendar_id,
       calendars.google_connection_id,
       calendars.created_by_user_id,
-      calendars.created_at
+      calendars.created_at,
+      calendars.updated_at
     FROM calendar_members
     INNER JOIN calendars ON calendars.id = calendar_members.calendar_id
     WHERE calendar_members.user_id = ${userId}
@@ -180,4 +185,29 @@ export async function findFirstForUser(userId: string) {
   ` as Calendar[];
 
   return rows[0] ?? null;
+}
+
+export async function deleteById(id: string) {
+  await sql`
+    DELETE FROM calendars
+    WHERE id = ${id}
+  `;
+}
+
+export async function cleanupDeletedCalendarById(id: string) {
+  await sql`
+    WITH cleared_active_users AS (
+      UPDATE users
+      SET active_calendar_id = NULL
+      WHERE active_calendar_id = ${id}
+      RETURNING id
+    ),
+    deleted_members AS (
+      DELETE FROM calendar_members
+      WHERE calendar_id = ${id}
+      RETURNING calendar_id
+    )
+    DELETE FROM calendars
+    WHERE id = ${id}
+  `;
 }

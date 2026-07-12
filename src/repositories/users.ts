@@ -98,3 +98,30 @@ export async function setActiveCalendar(userId: string, calendarId: string) {
 
   return rows[0] ?? null;
 }
+
+export async function clearActiveCalendar(calendarId: string) {
+  await sql`
+    UPDATE users
+    SET active_calendar_id = NULL
+    WHERE active_calendar_id = ${calendarId}
+  `;
+}
+
+export async function chooseFallbackActiveCalendar(userId: string) {
+  const rows = await sql`
+    WITH fallback AS (
+      SELECT calendars.id
+      FROM calendar_members
+      INNER JOIN calendars ON calendars.id = calendar_members.calendar_id
+      WHERE calendar_members.user_id = ${userId}
+      ORDER BY calendar_members.joined_at ASC, calendars.created_at ASC
+      LIMIT 1
+    )
+    UPDATE users
+    SET active_calendar_id = (SELECT id FROM fallback)
+    WHERE users.id = ${userId}
+    RETURNING id, telegram_id, telegram_username, first_name, last_name, language, active_calendar_id, created_at
+  ` as User[];
+
+  return rows[0] ?? null;
+}

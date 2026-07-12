@@ -130,6 +130,47 @@ export const messages = {
   calendarsTitle(language: Language) {
     return language === "ru" ? "Ваши календари" : "Your calendars";
   },
+  calendarDeletedInGoogle(language: Language) {
+    return language === "ru"
+      ? "Этот календарь был удалён в Google Calendar, поэтому он удалён из Meetory."
+      : "The calendar was deleted in Google Calendar, so it has been removed from Meetory.";
+  },
+  calendarAccessLost(language: Language) {
+    return language === "ru"
+      ? [
+          "У Meetory больше нет доступа к этому Google Календарю.",
+          "",
+          "Переподключите Google Calendar или восстановите доступ в настройках Google Calendar.",
+        ].join("\n")
+      : [
+          "Meetory no longer has access to this Google Calendar.",
+          "",
+          "Reconnect Google Calendar or restore access in Google Calendar settings.",
+        ].join("\n");
+  },
+  googleConnectionExpired(language: Language) {
+    return language === "ru"
+      ? [
+          "Подключение к Google Calendar истекло или было отозвано.",
+          "",
+          "Подключите Google Calendar снова, чтобы продолжить.",
+        ].join("\n")
+      : [
+          "Your Google Calendar connection has expired or was revoked.",
+          "",
+          "Connect Google Calendar again to continue.",
+        ].join("\n");
+  },
+  googleCalendarTemporaryUnavailable(language: Language) {
+    return language === "ru"
+      ? "Google Calendar временно недоступен. Попробуйте ещё раз позже."
+      : "Google Calendar is temporarily unavailable. Please try again later.";
+  },
+  inaccessibleCalendarsNotice(language: Language, count: number) {
+    return language === "ru"
+      ? `Недоступные календари: ${count}.`
+      : `Unavailable calendars: ${count}.`;
+  },
   help(language: Language) {
     return language === "ru"
       ? "Команды:\n/start — открыть главное меню\n/newcalendar — создать календарь\n/calendars — показать календари\n/disconnect — отключить Google Calendar\n/help — помощь"
@@ -194,6 +235,9 @@ export const messages = {
   },
   connectGoogleCalendar(language: Language) {
     return language === "ru" ? "🔗 Подключить Google" : "🔗 Connect Google Calendar";
+  },
+  reconnectGoogleCalendar(language: Language) {
+    return language === "ru" ? "🔗 Переподключить Google" : "🔗 Reconnect Google Calendar";
   },
   tryAgainButton(language: Language) {
     return language === "ru" ? "🔗 Попробовать снова" : "🔗 Try again";

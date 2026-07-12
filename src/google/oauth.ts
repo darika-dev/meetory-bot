@@ -5,7 +5,8 @@ import { decryptToken } from "../security/tokenEncryption.js";
 
 export const GOOGLE_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/calendar",
-  "https://www.googleapis.com/auth/userinfo.email",
+  "openid",
+  "email",
 ];
 
 function getGoogleOAuthConfig() {
@@ -44,10 +45,37 @@ export function createGoogleAuthorizationUrl(state: string) {
   });
 }
 
-export async function getGoogleEmail(accessToken: string) {
+export async function getGoogleEmail(tokens: {
+  access_token?: string | null;
+  id_token?: string | null;
+}) {
   const oauth2Client = createGoogleOAuthClient();
 
-  oauth2Client.setCredentials({ access_token: accessToken });
+  if (tokens.id_token) {
+    try {
+      const ticket = await oauth2Client.verifyIdToken({
+        idToken: tokens.id_token,
+        audience: getGoogleOAuthConfig().clientId,
+      });
+      const email = ticket.getPayload()?.email;
+
+      if (email) {
+        return email;
+      }
+    } catch (error) {
+      console.error("Google ID token email read failed:", {
+        operation: "read_google_email_from_id_token",
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (!tokens.access_token) {
+    return null;
+  }
+
+  oauth2Client.setCredentials({ access_token: tokens.access_token });
 
   const oauth2 = google.oauth2({
     auth: oauth2Client,
@@ -59,6 +87,10 @@ export async function getGoogleEmail(accessToken: string) {
 }
 
 export async function revokeGoogleConnectionRefreshToken(connection: GoogleConnection) {
+  if (!connection.encrypted_refresh_token) {
+    return;
+  }
+
   const oauth2Client = createGoogleOAuthClient();
 
   await oauth2Client.revokeToken(decryptToken(connection.encrypted_refresh_token));

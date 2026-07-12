@@ -6,6 +6,7 @@ import {
   getGoogleEmail,
   GOOGLE_OAUTH_SCOPES,
 } from "../google/oauth.js";
+import { checkCalendarAvailability, cleanupDeletedCalendar } from "../google/calendarService.js";
 import { getLanguage, messages } from "../i18n.js";
 import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
@@ -54,6 +55,25 @@ async function getActiveOrFirstCalendar(userId: string) {
   }
 
   return firstCalendar;
+}
+
+async function getActiveOrFirstAvailableCalendar(userId: string) {
+  const calendars = await calendarsRepository.findForUser(userId);
+  const checkedCalendars = await Promise.all(calendars.map((calendar) => checkCalendarAvailability(calendar)));
+
+  for (const checked of checkedCalendars) {
+    if (checked.status === "available") {
+      await usersRepository.setActiveCalendar(userId, checked.calendar.id);
+
+      return checked;
+    }
+
+    if (checked.status === "calendar_not_found") {
+      await cleanupDeletedCalendar(checked.calendar);
+    }
+  }
+
+  return null;
 }
 
 function hasGrantedCalendarScope(scope?: string | null) {
@@ -202,7 +222,7 @@ googleRouter.get("/callback", async (req, res) => {
       return res.status(400).send(html(messages.oauthCalendarScopeMissingBrowser(language)));
     }
 
-    const googleEmail = await getGoogleEmail(credentials.access_token);
+    const googleEmail = await getGoogleEmail(credentials);
 
     if (!googleEmail) {
       return res.status(400).send(html("Could not read your Google email. Please try again."));
@@ -243,9 +263,23 @@ googleRouter.get("/callback", async (req, res) => {
         const activeCalendar = await getActiveOrFirstCalendar(user.id);
 
         if (activeCalendar) {
-          await bot?.api.sendMessage(user.telegram_id, messages.welcomeBack(language, activeCalendar.name), {
-            reply_markup: mainCalendarKeyboard(language),
-          });
+          const checkedActiveCalendar = await checkCalendarAvailability(activeCalendar);
+          const availableCalendar = checkedActiveCalendar.status === "available"
+            ? checkedActiveCalendar
+            : await getActiveOrFirstAvailableCalendar(user.id);
+
+          if (!availableCalendar) {
+            await bot?.api.sendMessage(user.telegram_id, messages.noCalendars(language), {
+              reply_markup: noCalendarsKeyboard(language),
+            });
+          } else {
+            await bot?.api.sendMessage(user.telegram_id, messages.welcomeBack(
+              language,
+              availableCalendar.metadata.summary,
+            ), {
+              reply_markup: mainCalendarKeyboard(language),
+            });
+          }
         } else {
           await bot?.api.sendMessage(user.telegram_id, messages.noCalendars(language), {
             reply_markup: noCalendarsKeyboard(language),

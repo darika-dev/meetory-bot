@@ -2,7 +2,11 @@ import { InlineKeyboard } from "grammy";
 import { getAppBaseUrl } from "./config.js";
 import { createOAuthState } from "./security/oauthState.js";
 import { callbackData, messages, type Language } from "./i18n.js";
-import type { Calendar } from "./repositories/calendars.js";
+
+export type CalendarListItem = {
+  id: string;
+  summary: string;
+};
 
 export function connectGoogleKeyboard(telegramUserId: string, language: Language) {
   const url = `${getAppBaseUrl()}/google/oauth?state=${encodeURIComponent(createOAuthState(telegramUserId))}`;
@@ -13,7 +17,7 @@ export function connectGoogleKeyboard(telegramUserId: string, language: Language
 export function reconnectGoogleKeyboard(telegramUserId: string, language: Language) {
   const url = `${getAppBaseUrl()}/google/oauth?state=${encodeURIComponent(createOAuthState(telegramUserId))}`;
 
-  return new InlineKeyboard().url(messages.connectGoogleCalendar(language), url);
+  return new InlineKeyboard().url(messages.reconnectGoogleCalendar(language), url);
 }
 
 export function retryGoogleOAuthKeyboard(telegramUserId: string, language: Language) {
@@ -53,15 +57,20 @@ export function googleDisconnectConfirmKeyboard(language: Language) {
 
 export function formatCalendarsList(input: {
   language: Language;
-  calendars: Calendar[];
+  calendars: CalendarListItem[];
   activeCalendarId: string | null;
+  inaccessibleCount?: number;
 }) {
   const lines = [messages.calendarsTitle(input.language), ""];
 
   for (const calendar of input.calendars) {
     const prefix = calendar.id === input.activeCalendarId ? "✅" : "•";
 
-    lines.push(`${prefix} ${calendar.name}`);
+    lines.push(`${prefix} ${calendar.summary}`);
+  }
+
+  if (input.inaccessibleCount && input.inaccessibleCount > 0) {
+    lines.push("", messages.inaccessibleCalendarsNotice(input.language, input.inaccessibleCount));
   }
 
   lines.push("", "────────────", "", messages.newCalendarButton(input.language));

@@ -12,22 +12,57 @@ CREATE TABLE IF NOT EXISTS google_connections (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   google_email TEXT NOT NULL,
-  encrypted_refresh_token TEXT NOT NULL,
+  encrypted_refresh_token TEXT,
+  status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'disconnected')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE google_connections
+  ALTER COLUMN encrypted_refresh_token DROP NOT NULL;
+
+ALTER TABLE google_connections
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'connected';
+
+ALTER TABLE google_connections
+  ALTER COLUMN status SET DEFAULT 'connected';
+
+UPDATE google_connections
+SET status = 'connected'
+WHERE status IS NULL;
+
+ALTER TABLE google_connections
+  ALTER COLUMN status SET NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'google_connections_status_check'
+  ) THEN
+    ALTER TABLE google_connections
+      ADD CONSTRAINT google_connections_status_check
+      CHECK (status IN ('connected', 'disconnected'));
+  END IF;
+END $$;
 
 ALTER TABLE google_connections
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS calendars (
   id BIGSERIAL PRIMARY KEY,
+  -- Legacy cache only. Google Calendar API is the source of truth for display metadata.
   name TEXT NOT NULL,
   google_calendar_id TEXT NOT NULL UNIQUE,
   google_connection_id BIGINT REFERENCES google_connections(id) ON DELETE SET NULL,
   created_by_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE calendars
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 ALTER TABLE calendars
   ALTER COLUMN google_connection_id DROP NOT NULL;
@@ -81,8 +116,10 @@ CREATE TABLE IF NOT EXISTS pending_actions (
 CREATE INDEX IF NOT EXISTS google_connections_user_id_idx
   ON google_connections(user_id);
 
-CREATE UNIQUE INDEX IF NOT EXISTS google_connections_user_id_unique_idx
-  ON google_connections(user_id);
+DROP INDEX IF EXISTS google_connections_user_id_unique_idx;
+
+CREATE UNIQUE INDEX IF NOT EXISTS google_connections_user_id_google_email_unique_idx
+  ON google_connections(user_id, google_email);
 
 CREATE INDEX IF NOT EXISTS calendars_google_connection_id_idx
   ON calendars(google_connection_id);
