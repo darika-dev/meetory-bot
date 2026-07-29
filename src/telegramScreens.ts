@@ -16,6 +16,10 @@ export function calendarDeleteCallbackData(action: "confirm" | "cancel", calenda
   return `calendar:delete:${action}:${calendarId}`;
 }
 
+export function eventCalendarCallbackData(calendarId: string) {
+  return `event:calendar:${calendarId}`;
+}
+
 export function connectGoogleKeyboard(telegramUserId: string, language: Language) {
   const url = `${getAppBaseUrl()}/google/oauth?state=${encodeURIComponent(createOAuthState(telegramUserId))}`;
 
@@ -142,4 +146,48 @@ export function calendarBackKeyboard(language: Language, calendarId: string) {
     .text(messages.calendarsButton(language), callbackData.listCalendars)
     .row()
     .text(messages.backButton(language), calendarCallbackData("open", calendarId));
+}
+
+export function eventDraftKeyboard(language: Language, calendarName: string, draftId: string) {
+  return new InlineKeyboard()
+    .text(`📅 ${calendarName} ▾`, callbackData.eventCalendar)
+    .row()
+    .text(messages.saveEventButton(language), `${callbackData.eventSave}:${draftId}`)
+    .row()
+    .text(messages.editButton(language), callbackData.eventEdit)
+    .row()
+    .text(messages.cancelButton(language), callbackData.eventCancel);
+}
+
+export function eventCalendarSelectionKeyboard(input: {
+  language: Language;
+  calendars: CalendarListItem[];
+  selectedCalendarId: string;
+}) {
+  const keyboard = new InlineKeyboard();
+
+  for (const calendar of input.calendars) {
+    const prefix = calendar.id === input.selectedCalendarId ? "✅" : "📅";
+
+    keyboard.text(`${prefix} ${calendar.summary}`, eventCalendarCallbackData(calendar.id)).row();
+  }
+
+  return keyboard.text(messages.backButton(input.language), callbackData.eventBack);
+}
+
+export function eventEditCancelKeyboard(language: Language) {
+  return new InlineKeyboard().text(messages.cancelEditingButton(language), callbackData.eventCancelEdit);
+}
+
+export function eventSavedKeyboard(input: {
+  language: Language;
+  htmlLink?: string | null;
+}) {
+  const keyboard = new InlineKeyboard();
+
+  if (input.htmlLink) {
+    keyboard.url(messages.openGoogleCalendarButton(input.language), input.htmlLink).row();
+  }
+
+  return keyboard.text(messages.calendarsButton(input.language), callbackData.listCalendars);
 }

@@ -9,6 +9,12 @@ export const callbackData = {
   cancelGoogleDisconnect: "google:disconnect:cancel",
   cancelRenameCalendar: "calendar:rename:cancel",
   mainMenu: "main:menu",
+  eventCalendar: "event:calendar",
+  eventBack: "event:back",
+  eventSave: "event:save",
+  eventEdit: "event:edit",
+  eventCancel: "event:cancel",
+  eventCancelEdit: "event:edit:cancel",
 } as const;
 
 export function getLanguage(language?: string | null): Language {
@@ -267,10 +273,148 @@ export const messages = {
       ? "Meetory не может удалить основной Google Календарь."
       : "The primary Google Calendar cannot be deleted by Meetory.";
   },
+  textOnlyEventInput(language: Language) {
+    return language === "ru"
+      ? "Сейчас я умею распознавать только текст мероприятия или подпись к изображению."
+      : "I can currently read only event details sent as text or as a media caption.";
+  },
+  createCalendarBeforeEvents(language: Language) {
+    return language === "ru"
+      ? "Создайте календарь или присоединитесь к нему, прежде чем сохранять мероприятия."
+      : "Create or join a calendar before saving events.";
+  },
+  eventParseTemporaryError(language: Language) {
+    return language === "ru"
+      ? "Сейчас не удалось обработать мероприятие. Попробуйте ещё раз позже."
+      : "I couldn't process this event right now. Please try again later.";
+  },
+  eventParserNotConfigured(language: Language) {
+    return language === "ru"
+      ? "Распознавание мероприятий пока не настроено. Администратору нужно добавить OpenAI API key."
+      : "Event parsing is not configured yet. The administrator needs to add an OpenAI API key.";
+  },
+  eventParserBillingUnavailable(language: Language) {
+    return language === "ru"
+      ? "Распознавание мероприятий временно недоступно из-за лимита или биллинга OpenAI."
+      : "Event parsing is temporarily unavailable because of OpenAI billing or quota limits.";
+  },
+  eventParserRateLimited(language: Language) {
+    return language === "ru"
+      ? "Распознавание мероприятий временно перегружено. Попробуйте ещё раз немного позже."
+      : "Event parsing is temporarily rate limited. Please try again in a moment.";
+  },
+  eventProcessing(language: Language) {
+    return language === "ru" ? "⏳ Анализирую мероприятие…" : "⏳ Analysing the event…";
+  },
+  eventAnalyseFailed(language: Language) {
+    return language === "ru"
+      ? "Не удалось распознать мероприятие. Попробуйте ещё раз."
+      : "I couldn’t analyse this event. Please try again.";
+  },
+  eventNotFound(language: Language) {
+    return language === "ru"
+      ? "Я не нашёл мероприятие в этом сообщении.\n\nПерешлите анонс, в котором есть хотя бы название и дата."
+      : "I couldn't find an event in this message.\n\nForward an announcement containing at least a title and date.";
+  },
+  eventMissingDate(language: Language) {
+    return language === "ru"
+      ? "Я нашёл мероприятие, но не смог определить дату.\n\nОтправьте дату вместе с информацией о мероприятии ещё раз."
+      : "I found an event, but couldn't determine its date.\n\nPlease send the date in a new message together with the event details.";
+  },
+  eventMissingTitle(language: Language) {
+    return language === "ru"
+      ? "Я не смог определить название мероприятия. Добавьте название и попробуйте ещё раз."
+      : "I couldn't determine the event name. Please add a title and try again.";
+  },
+  eventDraftTitle(language: Language) {
+    return language === "ru" ? "Я нашёл мероприятие:" : "I found an event:";
+  },
+  multiDayEventDraftTitle(language: Language) {
+    return language === "ru" ? "Я нашёл многодневное мероприятие:" : "I found a multi-day event:";
+  },
+  eventSaveTo(language: Language) {
+    return language === "ru" ? "Сохранить в:" : "Save to:";
+  },
+  eventLocationNotSpecified(language: Language) {
+    return language === "ru" ? "Не указано" : "Not specified";
+  },
+  eventTimeNotSpecified(language: Language) {
+    return language === "ru" ? "Время не указано" : "Time not specified";
+  },
+  eventAllDay(language: Language) {
+    return language === "ru" ? "Весь день" : "All day";
+  },
+  eventDailyTime(language: Language, timeRange: string) {
+    return language === "ru" ? `Ежедневно, ${timeRange}` : `Daily, ${timeRange}`;
+  },
+  dailyRangeEventsWillBeCreated(language: Language, count: number) {
+    return language === "ru" ? `Будет создано событий: ${count}.` : `${count} events will be created.`;
+  },
+  eventRangeTooLong(language: Language) {
+    return language === "ru"
+      ? "Это мероприятие охватывает слишком много дат для автоматического сохранения."
+      : "This event spans too many dates to save automatically.";
+  },
+  chooseEventCalendar(language: Language) {
+    return language === "ru" ? "Выберите календарь:" : "Choose a calendar:";
+  },
+  eventEditPrompt(language: Language) {
+    return language === "ru"
+      ? "Отправьте исправленную информацию о мероприятии новым сообщением.\n\nТекущий черновик будет заменён."
+      : "Send the corrected event details as a new message.\n\nThe current draft will be replaced.";
+  },
+  eventDraftCancelled(language: Language) {
+    return language === "ru" ? "Черновик мероприятия удалён." : "Event draft cancelled.";
+  },
+  eventAlreadySavedOrExpired(language: Language) {
+    return language === "ru"
+      ? "Это мероприятие уже сохранено или черновик устарел."
+      : "This event has already been saved or the draft has expired.";
+  },
+  eventDraftNoLongerAvailable(language: Language) {
+    return language === "ru"
+      ? "Этот черновик больше недоступен."
+      : "This draft is no longer available.";
+  },
+  eventSaved(language: Language, title: string, date: string, calendarName: string) {
+    return language === "ru"
+      ? `✅ Мероприятие сохранено.\n\n🎫 ${title}\n📅 ${date}\n📅 ${calendarName}`
+      : `✅ Event saved.\n\n🎫 ${title}\n📅 ${date}\n📅 ${calendarName}`;
+  },
+  dailyRangeEventsSaved(language: Language, count: number, title: string, dateRange: string, timeRange: string, calendarName: string) {
+    return language === "ru"
+      ? `✅ Сохранено событий: ${count}.\n\n🎫 ${title}\n📅 ${dateRange}\n🕒 ${timeRange}\n📅 ${calendarName}`
+      : `✅ ${count} events saved.\n\n🎫 ${title}\n📅 ${dateRange}\n🕒 ${timeRange}\n📅 ${calendarName}`;
+  },
+  eventBatchPartialFailure(language: Language) {
+    return language === "ru"
+      ? "Не удалось сохранить все события. Часть событий могла быть создана в Google Calendar. Проверьте календарь перед повторной попыткой."
+      : "Could not save all events. Some events may have been created in Google Calendar. Check the calendar before trying again.";
+  },
   help(language: Language) {
     return language === "ru"
-      ? "Команды:\n/start — открыть главное меню\n/newcalendar — создать календарь\n/calendars — показать календари\n/disconnect — отключить Google Calendar\n/help — помощь"
-      : "Commands:\n/start - open the main menu\n/newcalendar - create a calendar\n/calendars - show calendars\n/disconnect - disconnect Google Calendar\n/help - help";
+      ? [
+          "Команды:",
+          "/start — открыть главное меню",
+          "/newcalendar — создать календарь",
+          "/calendars — показать календари",
+          "/disconnect — отключить Google Calendar",
+          "/help — помощь",
+          "",
+          "Перешлите анонс мероприятия или отправьте его описание текстом.",
+          "Meetory распознает дату, время и место и предложит выбрать календарь.",
+        ].join("\n")
+      : [
+          "Commands:",
+          "/start - open the main menu",
+          "/newcalendar - create a calendar",
+          "/calendars - show calendars",
+          "/disconnect - disconnect Google Calendar",
+          "/help - help",
+          "",
+          "Forward an event announcement or send its details as text.",
+          "Meetory will extract the date, time and place and ask where to save it.",
+        ].join("\n");
   },
   disconnectNotConnected(language: Language) {
     return language === "ru"
@@ -370,6 +514,18 @@ export const messages = {
   },
   deleteForeverButton(language: Language) {
     return language === "ru" ? "🗑 Удалить навсегда" : "🗑 Delete forever";
+  },
+  saveEventButton(language: Language) {
+    return language === "ru" ? "💾 Сохранить" : "💾 Save";
+  },
+  editButton(language: Language) {
+    return language === "ru" ? "✏️ Изменить" : "✏️ Edit";
+  },
+  openGoogleCalendarButton(language: Language) {
+    return language === "ru" ? "Открыть в Google Calendar" : "Open in Google Calendar";
+  },
+  cancelEditingButton(language: Language) {
+    return language === "ru" ? "✖️ Отменить" : "✖️ Cancel editing";
   },
   disconnectConfirmButton(language: Language) {
     return language === "ru" ? "Отключить Google" : "Disconnect Google";

@@ -33,6 +33,8 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=
 OAUTH_STATE_SECRET=
 TOKEN_ENCRYPTION_KEY=
+OPENAI_API_KEY=
+OPENAI_EVENT_PARSER_MODEL=
 ```
 
 `APP_URL` should be your deployed base URL, for example:
@@ -54,6 +56,8 @@ openssl rand -base64 32
 ```
 
 Use one generated value for `OAUTH_STATE_SECRET`. Generate another value for `TOKEN_ENCRYPTION_KEY`. `TOKEN_ENCRYPTION_KEY` must decode to exactly 32 bytes.
+
+`OPENAI_EVENT_PARSER_MODEL` is optional. If omitted, Meetory uses its built-in default event parser model.
 
 ## Neon Setup
 
@@ -205,6 +209,16 @@ Tables:
 - `pending_actions`
 
 There is intentionally no `events` table. `calendars.name` is not used as the display source of truth; Meetory reads the current calendar summary from Google Calendar API when listing or selecting calendars.
+
+Event drafts are stored only temporarily in `pending_actions` until the user confirms or cancels. After saving, the event exists only in Google Calendar. Meetory does not create a permanent event record in PostgreSQL.
+
+Before parsing an event, Meetory includes Telegram `url` and `text_link` entities from message text or captions so hidden links such as `ТУТ` are visible to the parser.
+
+Event parsing separates links by purpose: `eventUrl` for the concrete event page, tickets, registration, or official details; `locationUrl` for map links; `sourceUrl` for aggregators, Telegram channels, or repost sources. Google Maps links are not treated as event pages.
+
+When an event announcement has a date but no time, Meetory treats it as an all-day Google Calendar event. When it has a date range but no time, Meetory treats it as `all_day_range` and creates one multi-day all-day Google Calendar event.
+
+When an announcement describes consecutive dates with the same daily hours, for example `July 31 - August 2, 18:00-23:00`, Meetory treats it as a `daily_range` draft and creates one Google Calendar event per date. It does not create one continuous multi-day event for daily opening hours.
 
 `/calendars` reads only calendars where the user exists in `calendar_members`. It does not import or display unrelated calendars from `calendarList.list()`.
 

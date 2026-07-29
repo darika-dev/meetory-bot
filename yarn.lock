@@ -1001,6 +1001,11 @@ once@^1.4.0:
   dependencies:
     wrappy "1"
 
+openai@^7.1.0:
+  version "7.1.0"
+  resolved "https://registry.yarnpkg.com/openai/-/openai-7.1.0.tgz#a9f1e307b0dc34015f148f4dea1211cd08fc5939"
+  integrity sha512-7xWJ9iO5z5u1dnIUGwoUmZHkSyrUYXX2cUxo2E/26iKFrSC8IdEak7z94d5UntU7z+S/Cid33hYymwMSab2fZQ==
+
 package-json-from-dist@^1.0.0:
   version "1.0.1"
   resolved "https://registry.yarnpkg.com/package-json-from-dist/-/package-json-from-dist-1.0.1.tgz#4f1471a010827a86f94cfd9b0727e36d267de505"

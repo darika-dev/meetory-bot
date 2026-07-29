@@ -1,4 +1,19 @@
+import { randomUUID } from "crypto";
 import { Bot, type Context } from "grammy";
+import { parseEvent, type DetectedLink, type ParsedEvent } from "./ai/eventParser.js";
+import { applyLinkFallback, getUrlHostForLog } from "./ai/eventLinkFallback.js";
+import { classifyOpenAIError } from "./ai/openaiErrors.js";
+import {
+  buildConfirmEventPayload,
+  parseConfirmEventPayload,
+  type ConfirmEventPayload,
+} from "./events/eventDraft.js";
+import { buildCalendarDescription } from "./events/calendarDescription.js";
+import {
+  extractLinksFromTextEntities,
+  preserveHiddenLinksInText,
+  type TelegramTextEntity,
+} from "./telegram/linkExtraction.js";
 import * as calendarsRepository from "./repositories/calendars.js";
 import * as calendarMembersRepository from "./repositories/calendarMembers.js";
 import * as googleConnectionsRepository from "./repositories/googleConnections.js";
@@ -8,6 +23,8 @@ import {
   checkCalendarAvailability,
   cleanupDeletedCalendar,
   createCalendarForUser,
+  createGoogleCalendarEvent,
+  GoogleEventBatchPartialFailureError,
   deleteRegistryGoogleCalendar,
   deleteCalendarForUser,
   getCalendarMetadata,
@@ -24,6 +41,10 @@ import {
   connectGoogleKeyboard,
   createCalendarCancelKeyboard,
   emptyCalendarsKeyboard,
+  eventCalendarSelectionKeyboard,
+  eventDraftKeyboard,
+  eventEditCancelKeyboard,
+  eventSavedKeyboard,
   googleDisconnectConfirmKeyboard,
   mainCalendarKeyboard,
   noCalendarsKeyboard,
@@ -32,6 +53,7 @@ import {
 } from "./telegramScreens.js";
 
 const CREATE_CALENDAR_TTL_MS = 15 * 60 * 1000;
+const EVENT_DRAFT_TTL_MS = 30 * 60 * 1000;
 const token = process.env.TELEGRAM_API_TOKEN?.trim();
 
 function createBot() {
@@ -50,10 +72,21 @@ type ReplyTarget = {
   reply: Context["reply"];
 };
 
+type ProcessingMessage = {
+  chatId: number | string;
+  messageId: number;
+};
+
 type ResolvedCalendarList = Awaited<ReturnType<typeof resolveCalendarsForUser>>;
 
 type RenameCalendarPayload = {
   calendarId: string;
+};
+
+type ResolvedEventCalendar = {
+  id: string;
+  summary: string;
+  timeZone: string;
 };
 
 export const bot = createBot();
@@ -158,6 +191,229 @@ function parseRenameCalendarPayload(payload: unknown): RenameCalendarPayload | n
   return typeof calendarId === "string" && calendarId ? { calendarId } : null;
 }
 
+function formatDateForLanguage(date: string, language: ReturnType<typeof getLanguage>) {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+
+  return new Intl.DateTimeFormat(language === "ru" ? "ru-RU" : "en-US", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+function compareIsoDates(left: string, right: string) {
+  return left.localeCompare(right);
+}
+
+function addDaysToIsoDate(date: string, days: number) {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+
+  return parsed.toISOString().slice(0, 10);
+}
+
+function countInclusiveDates(startDate: string, endDate: string) {
+  let count = 0;
+  let current = startDate;
+
+  while (compareIsoDates(current, endDate) <= 0) {
+    count += 1;
+
+    if (count > 31) {
+      return count;
+    }
+
+    current = addDaysToIsoDate(current, 1);
+  }
+
+  return count;
+}
+
+function formatDateRangeForLanguage(startDate: string, endDate: string, language: ReturnType<typeof getLanguage>) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  const locale = language === "ru" ? "ru-RU" : "en-US";
+
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).formatRange(start, end);
+}
+
+function formatEventTime(draft: ConfirmEventPayload, language: ReturnType<typeof getLanguage>) {
+  if (draft.scheduleType === "daily_range" && draft.startTime && draft.endTime) {
+    return messages.eventDailyTime(language, `${draft.startTime}–${draft.endTime}`);
+  }
+
+  if (draft.isAllDay) {
+    return messages.eventAllDay(language);
+  }
+
+  if (!draft.startTime) {
+    return messages.eventTimeNotSpecified(language);
+  }
+
+  return draft.endTime
+    ? `${draft.startTime}–${draft.endTime}`
+    : draft.startTime;
+}
+
+async function sendProcessingMessage(ctx: Context, language: ReturnType<typeof getLanguage>) {
+  try {
+    await ctx.replyWithChatAction("typing");
+  } catch (error) {
+    console.error("Telegram chat action failed:", {
+      operation: "send_event_processing_chat_action",
+      userId: ctx.from?.id ? String(ctx.from.id) : null,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  try {
+    const message = await ctx.reply(messages.eventProcessing(language));
+
+    return {
+      chatId: message.chat.id,
+      messageId: message.message_id,
+    } satisfies ProcessingMessage;
+  } catch (error) {
+    console.error("Telegram processing message failed:", {
+      operation: "send_event_processing_message",
+      userId: ctx.from?.id ? String(ctx.from.id) : null,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+
+    return null;
+  }
+}
+
+async function removeProcessingMessage(ctx: Context, processingMessage: ProcessingMessage | null) {
+  if (!processingMessage) {
+    return;
+  }
+
+  try {
+    await ctx.api.deleteMessage(processingMessage.chatId, processingMessage.messageId);
+  } catch (error) {
+    console.error("Telegram processing message delete failed:", {
+      operation: "delete_event_processing_message",
+      userId: ctx.from?.id ? String(ctx.from.id) : null,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function editProcessingMessage(
+  ctx: Context,
+  processingMessage: ProcessingMessage | null,
+  text: string,
+  options?: Parameters<Context["api"]["editMessageText"]>[3],
+) {
+  if (!processingMessage) {
+    return ctx.reply(text, options as Parameters<Context["reply"]>[1]);
+  }
+
+  try {
+    await ctx.api.editMessageText(processingMessage.chatId, processingMessage.messageId, text, options);
+
+    return;
+  } catch (error) {
+    console.error("Telegram processing message edit failed:", {
+      operation: "edit_event_processing_message",
+      userId: ctx.from?.id ? String(ctx.from.id) : null,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+
+    await removeProcessingMessage(ctx, processingMessage);
+
+    return ctx.reply(text, options as Parameters<Context["reply"]>[1]);
+  }
+}
+
+function getLocalDateTimeInTimeZone(timeZone: string) {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    time: `${get("hour")}:${get("minute")}`,
+  };
+}
+
+function extractMessageText(ctx: Context) {
+  const input = getMessageTextAndEntities(ctx);
+
+  if (!input?.text.trim()) {
+    return null;
+  }
+
+  return preserveHiddenLinksInText(input);
+}
+
+function getMessageTextAndEntities(ctx: Context) {
+  const message = ctx.message;
+  const text = message && "text" in message && typeof message.text === "string" ? message.text : null;
+  const caption = message && "caption" in message && typeof message.caption === "string" ? message.caption : null;
+
+  if (text) {
+    return {
+      text,
+      entities: message && "entities" in message && Array.isArray(message.entities)
+        ? message.entities as TelegramTextEntity[]
+        : [],
+    };
+  }
+
+  if (caption) {
+    return {
+      text: caption,
+      entities: message && "caption_entities" in message && Array.isArray(message.caption_entities)
+        ? message.caption_entities as TelegramTextEntity[]
+        : [],
+    };
+  }
+
+  return null;
+}
+
+function extractDetectedLinks(ctx: Context): DetectedLink[] {
+  const input = getMessageTextAndEntities(ctx);
+
+  if (!input) {
+    return [];
+  }
+
+  const result = extractLinksFromTextEntities(input);
+
+  console.info("[links:extracted]", result.summary);
+
+  return result.links;
+}
+
+function getForwardContext(ctx: Context) {
+  const message = ctx.message as { forward_origin?: unknown } | undefined;
+
+  if (!message?.forward_origin || typeof message.forward_origin !== "object") {
+    return null;
+  }
+
+  const origin = message.forward_origin as { type?: unknown };
+
+  return typeof origin.type === "string" ? `forward_origin:${origin.type}` : "forwarded";
+}
+
 async function getUserFromCallback(ctx: Context) {
   return ctx.from
     ? usersRepository.findByTelegramId(String(ctx.from.id))
@@ -176,6 +432,334 @@ async function getMemberCalendar(userId: string, calendarId: string) {
   }
 
   return calendarsRepository.findById(calendarId);
+}
+
+async function resolveEventCalendarsForUser(user: usersRepository.User) {
+  const checkedCalendars = await listMeetoryCalendarsForUser(user.id);
+  const available = checkedCalendars
+    .filter((result) => result.status === "available")
+    .map((result) => ({
+      id: result.calendar.id,
+      summary: result.metadata.summary,
+      timeZone: result.metadata.timeZone ?? "UTC",
+    }));
+
+  for (const deletedCalendar of checkedCalendars.filter((result) => result.status === "calendar_not_found")) {
+    await cleanupDeletedCalendar(deletedCalendar.calendar);
+  }
+
+  let selected = user.active_calendar_id
+    ? available.find((calendar) => calendar.id === user.active_calendar_id) ?? null
+    : null;
+
+  if (!selected && available[0]) {
+    selected = available[0];
+    await usersRepository.setActiveCalendar(user.id, selected.id);
+  }
+
+  return {
+    available,
+    selected,
+    hasOauthProblem: checkedCalendars.some((result) => result.status === "oauth_invalid"),
+    hasAccessProblem: checkedCalendars.some((result) => result.status === "calendar_access_denied"),
+    hasTemporaryProblem: checkedCalendars.some((result) =>
+      result.status === "rate_limited" || result.status === "temporary_google_error" || result.status === "unknown"
+    ),
+  };
+}
+
+async function getSelectedEventCalendar(user: usersRepository.User, calendarId: string) {
+  const calendar = await getMemberCalendar(user.id, calendarId);
+
+  if (!calendar) {
+    return null;
+  }
+
+  const checked = await checkCalendarAvailability(calendar);
+
+  if (checked.status !== "available") {
+    return null;
+  }
+
+  return {
+    id: calendar.id,
+    summary: checked.metadata.summary,
+    timeZone: checked.metadata.timeZone ?? "UTC",
+  } satisfies ResolvedEventCalendar;
+}
+
+function formatEventDraftMessage(
+  language: ReturnType<typeof getLanguage>,
+  draft: ConfirmEventPayload,
+  calendarName: string,
+) {
+  const linkLines = formatEventLinkLines(draft);
+
+  if ((draft.scheduleType === "daily_range" || draft.scheduleType === "all_day_range") && draft.endDate) {
+    const eventCount = countInclusiveDates(draft.startDate, draft.endDate);
+
+    const lines = [
+      messages.multiDayEventDraftTitle(language),
+      "",
+      `🎫 ${draft.title}`,
+      `📅 ${formatDateRangeForLanguage(draft.startDate, draft.endDate, language)}`,
+      `🕒 ${formatEventTime(draft, language)}`,
+      `📍 ${draft.location ?? messages.eventLocationNotSpecified(language)}`,
+      ...linkLines,
+      "",
+    ];
+
+    if (draft.scheduleType === "daily_range") {
+      lines.push(messages.dailyRangeEventsWillBeCreated(language, eventCount), "");
+    }
+
+    lines.push(messages.eventSaveTo(language), `📅 ${calendarName}`);
+
+    return lines.join("\n");
+  }
+
+  return [
+    messages.eventDraftTitle(language),
+    "",
+    `🎫 ${draft.title}`,
+    `📅 ${formatDateForLanguage(draft.startDate, language)}`,
+    `🕒 ${formatEventTime(draft, language)}`,
+    `📍 ${draft.location ?? messages.eventLocationNotSpecified(language)}`,
+    ...linkLines,
+    "",
+    messages.eventSaveTo(language),
+    `📅 ${calendarName}`,
+  ].join("\n");
+}
+
+function formatEventLinkLines(draft: Pick<ConfirmEventPayload, "eventUrl" | "locationUrl" | "sourceUrl">) {
+  return [
+    draft.eventUrl ? `🔗 Event: ${draft.eventUrl}` : null,
+    draft.locationUrl ? `📍 Map: ${draft.locationUrl}` : null,
+    draft.sourceUrl ? `↗️ Source: ${draft.sourceUrl}` : null,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function validateParsedEventSchedule(parsed: ParsedEvent, language: ReturnType<typeof getLanguage>) {
+  if (parsed.scheduleType !== "daily_range" && parsed.scheduleType !== "all_day_range") {
+    return null;
+  }
+
+  if (!parsed.startDate || !parsed.endDate) {
+    return messages.eventMissingDate(language);
+  }
+
+  if (compareIsoDates(parsed.endDate, parsed.startDate) < 0) {
+    return messages.eventMissingDate(language);
+  }
+
+  if (parsed.scheduleType === "daily_range" && (!parsed.startTime || !parsed.endTime)) {
+    return messages.eventMissingDate(language);
+  }
+
+  if (parsed.scheduleType === "daily_range" && countInclusiveDates(parsed.startDate, parsed.endDate) > 31) {
+    return messages.eventRangeTooLong(language);
+  }
+
+  return null;
+}
+
+function formatEventSavedDate(draft: ConfirmEventPayload, language: ReturnType<typeof getLanguage>) {
+  return draft.scheduleType === "daily_range" && draft.endDate
+    ? formatDateRangeForLanguage(draft.startDate, draft.endDate, language)
+    : draft.scheduleType === "all_day_range" && draft.endDate
+      ? formatDateRangeForLanguage(draft.startDate, draft.endDate, language)
+    : formatDateForLanguage(draft.startDate, language);
+}
+
+function formatEventSavedTime(draft: ConfirmEventPayload, language: ReturnType<typeof getLanguage>) {
+  return draft.scheduleType === "daily_range" ? formatEventTime(draft, language) : null;
+}
+
+async function replyEventDraft(
+  target: Context,
+  user: usersRepository.User,
+  draft: ConfirmEventPayload,
+  processingMessage: ProcessingMessage | null = null,
+) {
+  const language = getLanguage(user.language);
+  const selectedCalendar = await getSelectedEventCalendar(user, draft.calendarId);
+
+  if (!selectedCalendar) {
+    return editProcessingMessage(target, processingMessage, messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  return editProcessingMessage(target, processingMessage, formatEventDraftMessage(language, draft, selectedCalendar.summary), {
+    reply_markup: eventDraftKeyboard(language, selectedCalendar.summary, draft.draftId),
+  });
+}
+
+async function parseMessageAsEvent(
+  ctx: Context,
+  user: usersRepository.User,
+  text: string,
+  forwardContext: string | null,
+  detectedLinks: DetectedLink[],
+) {
+  const eventTraceId = randomUUID();
+  const language = getLanguage(user.language);
+  const processingMessage = await sendProcessingMessage(ctx, language);
+
+  try {
+    const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
+
+    if (!googleConnection) {
+      const existingConnections = await googleConnectionsRepository.findByUser(user.id);
+
+      if (existingConnections.length > 0) {
+        return editProcessingMessage(ctx, processingMessage, messages.googleConnectionExpired(language), {
+          reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
+        });
+      }
+
+      return editProcessingMessage(ctx, processingMessage, messages.welcome(language), {
+        reply_markup: connectGoogleKeyboard(user.telegram_id, language),
+      });
+    }
+
+    const eventCalendars = await resolveEventCalendarsForUser(user);
+
+    if (!eventCalendars.selected) {
+      if (eventCalendars.hasOauthProblem) {
+        return editProcessingMessage(ctx, processingMessage, messages.googleConnectionExpired(language), {
+          reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
+        });
+      }
+
+      if (eventCalendars.hasAccessProblem) {
+        return editProcessingMessage(ctx, processingMessage, messages.calendarAccessLost(language), {
+          reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
+        });
+      }
+
+      if (eventCalendars.hasTemporaryProblem) {
+        return editProcessingMessage(ctx, processingMessage, messages.googleCalendarTemporaryUnavailable(language));
+      }
+
+      return editProcessingMessage(ctx, processingMessage, messages.createCalendarBeforeEvents(language), {
+        reply_markup: emptyCalendarsKeyboard(language),
+      });
+    }
+
+    const now = getLocalDateTimeInTimeZone(eventCalendars.selected.timeZone);
+    let parsed: ParsedEvent;
+
+    try {
+      parsed = await parseEvent({
+        text,
+        language,
+        currentDate: now.date,
+        currentLocalTime: now.time,
+        timeZone: eventCalendars.selected.timeZone,
+        forwardContext,
+        detectedLinks,
+      });
+      parsed = applyLinkFallback(parsed, detectedLinks);
+
+      console.info("[event-time:parsed]", {
+        traceId: eventTraceId,
+        startDate: parsed.startDate,
+        startTime: parsed.startTime,
+        endDate: parsed.endDate,
+        endTime: parsed.endTime,
+        scheduleType: parsed.scheduleType,
+      });
+
+      console.info("[event-parser:links]", {
+        traceId: eventTraceId,
+        hasEventUrl: Boolean(parsed.eventUrl),
+        hasLocationUrl: Boolean(parsed.locationUrl),
+        hasSourceUrl: Boolean(parsed.sourceUrl),
+        eventUrlHost: getUrlHostForLog(parsed.eventUrl),
+        locationUrlHost: getUrlHostForLog(parsed.locationUrl),
+        sourceUrlHost: getUrlHostForLog(parsed.sourceUrl),
+      });
+    } catch (error) {
+      const errorKind = classifyOpenAIError(error);
+
+      console.error("OpenAI event parsing failed:", {
+        operation: "parse_event",
+        userId: user.id,
+        provider: "openai",
+        errorKind,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+
+      if (errorKind === "missing_api_key") {
+        return editProcessingMessage(ctx, processingMessage, messages.eventParserNotConfigured(language));
+      }
+
+      if (errorKind === "insufficient_quota") {
+        return editProcessingMessage(ctx, processingMessage, messages.eventParserBillingUnavailable(language));
+      }
+
+      if (errorKind === "rate_limited") {
+        return editProcessingMessage(ctx, processingMessage, messages.eventParserRateLimited(language));
+      }
+
+      return editProcessingMessage(ctx, processingMessage, messages.eventParseTemporaryError(language));
+    }
+
+    if (!parsed.isEvent) {
+      return editProcessingMessage(ctx, processingMessage, messages.eventNotFound(language));
+    }
+
+    if (!parsed.title) {
+      return editProcessingMessage(ctx, processingMessage, messages.eventMissingTitle(language));
+    }
+
+    if (!parsed.startDate) {
+      return editProcessingMessage(ctx, processingMessage, messages.eventMissingDate(language));
+    }
+
+    const scheduleValidationError = validateParsedEventSchedule(parsed, language);
+
+    if (scheduleValidationError) {
+      return editProcessingMessage(ctx, processingMessage, scheduleValidationError);
+    }
+
+    const sourceDescription = buildCalendarDescription({
+      sourceText: text,
+      parsedTitle: parsed.title,
+      eventUrl: parsed.eventUrl,
+      locationUrl: parsed.locationUrl,
+      sourceUrl: parsed.sourceUrl,
+      extractedLinks: detectedLinks,
+    });
+    const draft = buildConfirmEventPayload(parsed, eventCalendars.selected.id, eventTraceId, sourceDescription);
+
+    await pendingActionsRepository.upsertConfirmEventAction(
+      user.id,
+      draft,
+      new Date(Date.now() + EVENT_DRAFT_TTL_MS),
+    );
+
+    console.info("[event-time:draft-written]", {
+      traceId: draft.eventTraceId,
+      payloadVersion: draft.payloadVersion,
+      startDate: draft.startDate,
+      startTime: draft.startTime,
+      endDate: draft.endDate,
+      endTime: draft.endTime,
+    });
+
+    return replyEventDraft(ctx, user, draft, processingMessage);
+  } catch (error) {
+    console.error("Event message processing failed:", {
+      operation: "process_event_message",
+      userId: user.id,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+
+    return editProcessingMessage(ctx, processingMessage, messages.eventAnalyseFailed(language));
+  }
 }
 
 async function replyCalendarProblem(target: ReplyTarget, user: usersRepository.User, status: string) {
@@ -747,6 +1331,266 @@ bot?.callbackQuery(/^calendar:delete:confirm:/, async (ctx) => {
   return replyCalendarsList(ctx, refreshedUser, messages.deleteCalendarSuccess(language));
 });
 
+bot?.callbackQuery("event:calendar", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const pendingAction = await pendingActionsRepository.findByUserId(user.id);
+  const draft = pendingAction?.type === "confirm_event"
+    ? parseConfirmEventPayload(pendingAction.payload)
+    : null;
+
+  if (!draft || new Date(pendingAction.expires_at).getTime() <= Date.now()) {
+    await pendingActionsRepository.deleteByUserId(user.id);
+
+    return ctx.reply(messages.eventAlreadySavedOrExpired(language));
+  }
+
+  const eventCalendars = await resolveEventCalendarsForUser(user);
+
+  if (eventCalendars.available.length === 0) {
+    return ctx.reply(messages.createCalendarBeforeEvents(language), {
+      reply_markup: emptyCalendarsKeyboard(language),
+    });
+  }
+
+  return ctx.reply(messages.chooseEventCalendar(language), {
+    reply_markup: eventCalendarSelectionKeyboard({
+      language,
+      calendars: eventCalendars.available,
+      selectedCalendarId: draft.calendarId,
+    }),
+  });
+});
+
+bot?.callbackQuery(/^event:calendar:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "event:calendar:");
+  const pendingAction = await pendingActionsRepository.findByUserId(user.id);
+  const draft = pendingAction?.type === "confirm_event"
+    ? parseConfirmEventPayload(pendingAction.payload)
+    : null;
+
+  if (!draft || new Date(pendingAction.expires_at).getTime() <= Date.now()) {
+    await pendingActionsRepository.deleteByUserId(user.id);
+
+    return ctx.reply(messages.eventAlreadySavedOrExpired(language));
+  }
+
+  const selectedCalendar = await getSelectedEventCalendar(user, calendarId);
+
+  if (!selectedCalendar) {
+    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  const updatedDraft = {
+    ...draft,
+    status: "ready" as const,
+    calendarId: selectedCalendar.id,
+  };
+
+  await pendingActionsRepository.updateConfirmEventPayload(user.id, updatedDraft);
+
+  return replyEventDraft(ctx, user, updatedDraft);
+});
+
+bot?.callbackQuery("event:back", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  const pendingAction = await pendingActionsRepository.findByUserId(user.id);
+  const draft = pendingAction?.type === "confirm_event"
+    ? parseConfirmEventPayload(pendingAction.payload)
+    : null;
+
+  if (!draft) {
+    return ctx.reply(messages.eventAlreadySavedOrExpired(getLanguage(user.language)));
+  }
+
+  return replyEventDraft(ctx, user, draft);
+});
+
+bot?.callbackQuery("event:edit", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  await pendingActionsRepository.upsertEditEventAction(
+    user.id,
+    new Date(Date.now() + EVENT_DRAFT_TTL_MS),
+  );
+
+  return ctx.reply(messages.eventEditPrompt(getLanguage(user.language)), {
+    reply_markup: eventEditCancelKeyboard(getLanguage(user.language)),
+  });
+});
+
+bot?.callbackQuery("event:edit:cancel", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  await pendingActionsRepository.deleteByUserId(user.id);
+
+  return ctx.reply(messages.eventDraftCancelled(getLanguage(user.language)));
+});
+
+bot?.callbackQuery("event:cancel", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  await pendingActionsRepository.deleteByUserId(user.id);
+
+  return ctx.reply(messages.eventDraftCancelled(getLanguage(user.language)));
+});
+
+bot?.callbackQuery("event:save", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  return ctx.reply(messages.eventDraftNoLongerAvailable(getLanguage(user.language)));
+});
+
+bot?.callbackQuery(/^event:save:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const draftId = ctx.callbackQuery.data.slice("event:save:".length);
+  const processingAction = draftId
+    ? await pendingActionsRepository.markConfirmEventProcessing(user.id, draftId)
+    : null;
+  const draft = processingAction ? parseConfirmEventPayload(processingAction.payload) : null;
+
+  if (!draft) {
+    if (processingAction) {
+      console.info("[event-time:draft-read]", {
+        traceId: null,
+        payloadVersion: null,
+        draftId,
+        payloadReadable: false,
+      });
+
+      await pendingActionsRepository.deleteByUserIdAndType(user.id, "confirm_event");
+    }
+
+    return ctx.reply(messages.eventDraftNoLongerAvailable(language));
+  }
+
+  console.info("[event-time:draft-read]", {
+    traceId: draft.eventTraceId,
+    payloadVersion: draft.payloadVersion,
+    startDate: draft.startDate,
+    startTime: draft.startTime,
+    endDate: draft.endDate,
+    endTime: draft.endTime,
+  });
+
+  const selectedCalendar = await getSelectedEventCalendar(user, draft.calendarId);
+
+  if (!selectedCalendar) {
+    await pendingActionsRepository.resetConfirmEventProcessing(user.id, draft.draftId);
+
+    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  try {
+    const created = await createGoogleCalendarEvent({
+      userId: user.id,
+      calendarId: draft.calendarId,
+      draft,
+    });
+
+    await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draft.draftId);
+
+    const savedMessage = draft.scheduleType === "daily_range"
+      ? messages.dailyRangeEventsSaved(
+        language,
+        created.count,
+        draft.title,
+        formatEventSavedDate(draft, language),
+        formatEventSavedTime(draft, language) ?? "",
+        selectedCalendar.summary,
+      )
+      : messages.eventSaved(
+        language,
+        draft.title,
+        formatEventSavedDate(draft, language),
+        selectedCalendar.summary,
+      );
+
+    return ctx.reply(savedMessage, {
+      reply_markup: eventSavedKeyboard({
+        language,
+        htmlLink: created.htmlLink,
+      }),
+    });
+  } catch (error) {
+    if (error instanceof GoogleEventBatchPartialFailureError) {
+      console.error("Google Calendar event batch rollback failed:", {
+        operation: "create_event_batch",
+        userId: user.id,
+        calendarId: draft.calendarId,
+        provider: "google",
+        errorCategory: classifyGoogleApiError(error.cause),
+        createdCount: error.createdCount,
+      });
+
+      await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draft.draftId);
+
+      return ctx.reply(messages.eventBatchPartialFailure(language));
+    }
+
+    const kind = classifyGoogleApiError(error);
+
+    await pendingActionsRepository.resetConfirmEventProcessing(user.id, draft.draftId);
+
+    if (kind === "calendar_not_found") {
+      const calendar = await calendarsRepository.findById(draft.calendarId);
+
+      if (calendar) {
+        await cleanupDeletedCalendar(calendar);
+      }
+    }
+
+    return replyCalendarProblem(ctx, user, kind);
+  }
+});
+
 bot?.callbackQuery("invite:unavailable", async (ctx) => {
   await ctx.answerCallbackQuery();
   const user = ctx.from
@@ -813,10 +1657,10 @@ bot?.callbackQuery("google:disconnect:confirm", async (ctx) => {
   }
 });
 
-bot?.on("message:text", async (ctx) => {
-  const text = ctx.message.text;
+bot?.on("message", async (ctx) => {
+  const text = extractMessageText(ctx);
 
-  if (text.startsWith("/")) {
+  if (ctx.message.text?.startsWith("/")) {
     return;
   }
 
@@ -826,7 +1670,7 @@ bot?.on("message:text", async (ctx) => {
     return;
   }
 
-  const user = await usersRepository.findByTelegramId(String(from.id));
+  const user = await upsertTelegramUser(ctx);
 
   if (!user) {
     return;
@@ -835,17 +1679,39 @@ bot?.on("message:text", async (ctx) => {
   const language = getLanguage(user.language);
   const pendingAction = await pendingActionsRepository.findByUserId(user.id);
 
+  if (!text) {
+    if (pendingAction?.type === "create_calendar" || pendingAction?.type === "rename_calendar") {
+      return ctx.reply(messages.invalidCalendarName(language));
+    }
+
+    return ctx.reply(messages.textOnlyEventInput(language));
+  }
+
   if (!pendingAction) {
-    return;
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx));
+  }
+
+  if (pendingAction.type === "confirm_event") {
+    await pendingActionsRepository.deleteByUserIdAndType(user.id, "confirm_event");
+
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx));
   }
 
   if (new Date(pendingAction.expires_at).getTime() <= Date.now()) {
     await pendingActionsRepository.deleteByUserId(user.id);
 
+    if (pendingAction.type === "edit_event") {
+      return ctx.reply(messages.eventAlreadySavedOrExpired(language));
+    }
+
     return ctx.reply(messages.createCalendarExpired(language));
   }
 
   const name = validateCalendarName(text);
+
+  if (pendingAction.type === "edit_event") {
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx));
+  }
 
   if (pendingAction.type === "rename_calendar") {
     const payload = parseRenameCalendarPayload(pendingAction.payload);
@@ -925,7 +1791,7 @@ bot?.on("message:text", async (ctx) => {
   }
 
   if (pendingAction.type !== "create_calendar") {
-    return;
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx));
   }
 
   if (!name) {
