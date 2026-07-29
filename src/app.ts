@@ -11,6 +11,16 @@ export const app = express();
 
 app.use(express.json());
 
+let botInitPromise: Promise<void> | null = null;
+
+async function ensureBotInitialized(telegramBot: NonNullable<typeof bot>) {
+  if (!botInitPromise) {
+    botInitPromise = telegramBot.init();
+  }
+
+  await botInitPromise;
+}
+
 const telegramWebhookSecretGuard: RequestHandler = (req, res, next) => {
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
@@ -83,7 +93,22 @@ app.post(
         requestId,
       },
       store: processedTelegramUpdatesRepository,
-      handleUpdate: () => telegramBot.handleUpdate(update),
+      handleUpdate: async () => {
+        console.info("[telegram-update:handle-update-started]", {
+          updateId: update.update_id,
+          deploymentId,
+          requestId,
+        });
+
+        await ensureBotInitialized(telegramBot);
+        await telegramBot.handleUpdate(update);
+
+        console.info("[telegram-update:handle-update-finished]", {
+          updateId: update.update_id,
+          deploymentId,
+          requestId,
+        });
+      },
     });
 
     console.info("[telegram-webhook:responded]", {

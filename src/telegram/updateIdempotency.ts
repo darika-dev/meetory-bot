@@ -77,6 +77,12 @@ export async function processTelegramUpdateOnce(input: {
     expiresAt: new Date(Date.now() + UPDATE_RETENTION_MS),
   });
 
+  console.info("[telegram-update:claim-result]", {
+    ...context,
+    claimed,
+    reason: claimed ? "inserted" : "conflict",
+  });
+
   if (!claimed) {
     console.info("[telegram-update:duplicate]", context);
 
