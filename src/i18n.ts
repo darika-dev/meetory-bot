@@ -116,8 +116,8 @@ export const messages = {
   },
   firstCalendarHint(language: Language) {
     return language === "ru"
-      ? "💡 Совсем скоро вы сможете просто переслать любое мероприятие в Meetory, а бот сам предложит сохранить его в календарь."
-      : "💡 Soon you'll be able to forward any event to Meetory and save it directly to your calendar.";
+      ? "🎉 Всё готово! Попробуйте прямо сейчас — перешлите любое сообщение с мероприятием, и Meetory автоматически подготовит событие для вашего календаря."
+      : "🎉 You're all set! Try it now — forward any event announcement and Meetory will prepare it for your calendar.";
   },
   creationCancelled(language: Language) {
     return language === "ru" ? "Создание календаря отменено." : "Calendar creation cancelled.";

@@ -17,4 +17,5 @@ console.log(JSON.stringify({
   last_error_message: info.last_error_message,
   max_connections: info.max_connections,
   allowed_updates: info.allowed_updates,
+  ip_address: info.ip_address,
 }, null, 2));

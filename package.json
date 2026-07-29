@@ -16,6 +16,7 @@
     "webhook:set:production": "DOTENV_CONFIG_PATH=.env.production node scripts/set-webhook.ts",
     "commands:set": "node scripts/set-commands.ts",
     "commands:set:production": "DOTENV_CONFIG_PATH=.env.production node scripts/set-commands.ts",
+    "telegram-updates:cleanup": "node scripts/cleanup-telegram-updates.ts",
     "test": "tsc --outDir dist --noEmit false && node --test dist/tests/*.test.js",
     "typecheck": "tsc --noEmit"
   },

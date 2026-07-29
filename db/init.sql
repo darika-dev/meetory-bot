@@ -113,6 +113,25 @@ CREATE TABLE IF NOT EXISTS pending_actions (
   UNIQUE (user_id)
 );
 
+CREATE TABLE IF NOT EXISTS processed_telegram_updates (
+  update_id BIGINT PRIMARY KEY,
+  update_type TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('processing', 'completed', 'failed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ NULL,
+  expires_at TIMESTAMPTZ NULL,
+  error_code TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS event_source_claims (
+  idempotency_key TEXT PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN ('processing', 'completed', 'failed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ NULL,
+  error_code TEXT NULL
+);
+
 CREATE INDEX IF NOT EXISTS google_connections_user_id_idx
   ON google_connections(user_id);
 
@@ -135,3 +154,12 @@ CREATE INDEX IF NOT EXISTS users_active_calendar_id_idx
 
 CREATE INDEX IF NOT EXISTS pending_actions_expires_at_idx
   ON pending_actions(expires_at);
+
+CREATE INDEX IF NOT EXISTS processed_telegram_updates_created_at_idx
+  ON processed_telegram_updates(created_at);
+
+CREATE INDEX IF NOT EXISTS processed_telegram_updates_expires_at_idx
+  ON processed_telegram_updates(expires_at);
+
+CREATE INDEX IF NOT EXISTS event_source_claims_user_id_idx
+  ON event_source_claims(user_id);

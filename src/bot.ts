@@ -6,6 +6,7 @@ import { classifyOpenAIError } from "./ai/openaiErrors.js";
 import {
   buildConfirmEventPayload,
   parseConfirmEventPayload,
+  type ConfirmEventSourceIdentity,
   type ConfirmEventPayload,
 } from "./events/eventDraft.js";
 import { buildCalendarDescription } from "./events/calendarDescription.js";
@@ -14,10 +15,12 @@ import {
   preserveHiddenLinksInText,
   type TelegramTextEntity,
 } from "./telegram/linkExtraction.js";
+import { getBotIdFromToken, shouldIgnoreBotAuthoredMessage } from "./telegram/messageGuards.js";
 import * as calendarsRepository from "./repositories/calendars.js";
 import * as calendarMembersRepository from "./repositories/calendarMembers.js";
 import * as googleConnectionsRepository from "./repositories/googleConnections.js";
 import * as pendingActionsRepository from "./repositories/pendingActions.js";
+import * as eventSourceClaimsRepository from "./repositories/eventSourceClaims.js";
 import * as usersRepository from "./repositories/users.js";
 import {
   checkCalendarAvailability,
@@ -55,6 +58,7 @@ import {
 const CREATE_CALENDAR_TTL_MS = 15 * 60 * 1000;
 const EVENT_DRAFT_TTL_MS = 30 * 60 * 1000;
 const token = process.env.TELEGRAM_API_TOKEN?.trim();
+const configuredBotId = getBotIdFromToken(token);
 
 function createBot() {
   if (!token) {
@@ -88,6 +92,79 @@ type ResolvedEventCalendar = {
   summary: string;
   timeZone: string;
 };
+
+function getEventSourceIdentity(ctx: Context): ConfirmEventSourceIdentity {
+  const message = ctx.message;
+
+  return {
+    chatId: message?.chat.id ? String(message.chat.id) : null,
+    messageId: message?.message_id ? String(message.message_id) : null,
+    updateId: ctx.update.update_id ? String(ctx.update.update_id) : null,
+  };
+}
+
+function getRawMessageTextForLog(ctx: Context) {
+  const message = ctx.message;
+  const text = message && "text" in message && typeof message.text === "string" ? message.text : null;
+  const caption = message && "caption" in message && typeof message.caption === "string" ? message.caption : null;
+  const source = text ?? caption ?? "";
+
+  return source.replace(/\s+/g, " ").trim().slice(0, 80) || null;
+}
+
+function getForwardOriginType(ctx: Context) {
+  const message = ctx.message as ({ forward_origin?: { type?: string } } | undefined);
+
+  return message?.forward_origin?.type ?? null;
+}
+
+function getMessageHandlerLogContext(ctx: Context, handlerName: string) {
+  const message = ctx.message;
+  const messageWithExtras = message as ({
+    via_bot?: { id?: number | string };
+    sender_chat?: { id?: number | string };
+    from?: { id?: number | string; is_bot?: boolean };
+  } | undefined);
+
+  return {
+    updateId: ctx.update.update_id,
+    chatId: message?.chat.id ?? null,
+    messageId: message?.message_id ?? null,
+    fromId: ctx.from?.id ?? messageWithExtras?.from?.id ?? null,
+    fromIsBot: ctx.from?.is_bot ?? messageWithExtras?.from?.is_bot ?? null,
+    viaBotId: messageWithExtras?.via_bot?.id ?? null,
+    senderChatId: messageWithExtras?.sender_chat?.id ?? null,
+    textPreview: getRawMessageTextForLog(ctx),
+    forwardOriginType: getForwardOriginType(ctx),
+    handlerName,
+  };
+}
+
+function logEventAnalysisIgnored(ctx: Context, reason: string, handlerName: string) {
+  const message = ctx.message;
+
+  console.info("[event-analysis:ignored]", {
+    updateId: ctx.update.update_id,
+    chatId: message?.chat.id ?? null,
+    messageId: message?.message_id ?? null,
+    reason,
+    handlerName,
+  });
+}
+
+function logEventAnalysisAccepted(ctx: Context, handlerName: string) {
+  const message = ctx.message;
+  const messageWithExtras = message as ({ from?: { id?: number | string; is_bot?: boolean } } | undefined);
+
+  console.info("[event-analysis:accepted]", {
+    updateId: ctx.update.update_id,
+    chatId: message?.chat.id ?? null,
+    messageId: message?.message_id ?? null,
+    fromId: ctx.from?.id ?? messageWithExtras?.from?.id ?? null,
+    fromIsBot: ctx.from?.is_bot ?? messageWithExtras?.from?.is_bot ?? null,
+    handlerName,
+  });
+}
 
 export const bot = createBot();
 
@@ -600,9 +677,35 @@ async function parseMessageAsEvent(
   text: string,
   forwardContext: string | null,
   detectedLinks: DetectedLink[],
+  sourceIdentity: ConfirmEventSourceIdentity,
 ) {
   const eventTraceId = randomUUID();
   const language = getLanguage(user.language);
+  const sourceIdempotencyKey = sourceIdentity.chatId && sourceIdentity.messageId
+    ? eventSourceClaimsRepository.buildEventSourceIdempotencyKey({
+      chatId: sourceIdentity.chatId,
+      messageId: sourceIdentity.messageId,
+    })
+    : null;
+
+  if (sourceIdempotencyKey) {
+    const sourceClaimed = await eventSourceClaimsRepository.claimEventSource({
+      idempotencyKey: sourceIdempotencyKey,
+      userId: user.id,
+    });
+
+    if (!sourceClaimed) {
+      console.info("[event-parse:duplicate-source]", {
+        traceId: eventTraceId,
+        sourceTelegramChatId: sourceIdentity.chatId,
+        sourceTelegramMessageId: sourceIdentity.messageId,
+        sourceTelegramUpdateId: sourceIdentity.updateId,
+      });
+
+      return;
+    }
+  }
+
   const processingMessage = await sendProcessingMessage(ctx, language);
 
   try {
@@ -650,6 +753,13 @@ async function parseMessageAsEvent(
     let parsed: ParsedEvent;
 
     try {
+      console.info("[event-parse:started]", {
+        traceId: eventTraceId,
+        sourceTelegramChatId: sourceIdentity.chatId,
+        sourceTelegramMessageId: sourceIdentity.messageId,
+        sourceTelegramUpdateId: sourceIdentity.updateId,
+      });
+
       parsed = await parseEvent({
         text,
         language,
@@ -660,6 +770,15 @@ async function parseMessageAsEvent(
         detectedLinks,
       });
       parsed = applyLinkFallback(parsed, detectedLinks);
+
+      console.info("[event-parse:finished]", {
+        traceId: eventTraceId,
+        sourceTelegramChatId: sourceIdentity.chatId,
+        sourceTelegramMessageId: sourceIdentity.messageId,
+        sourceTelegramUpdateId: sourceIdentity.updateId,
+        isEvent: parsed.isEvent,
+        scheduleType: parsed.scheduleType,
+      });
 
       console.info("[event-time:parsed]", {
         traceId: eventTraceId,
@@ -732,7 +851,13 @@ async function parseMessageAsEvent(
       sourceUrl: parsed.sourceUrl,
       extractedLinks: detectedLinks,
     });
-    const draft = buildConfirmEventPayload(parsed, eventCalendars.selected.id, eventTraceId, sourceDescription);
+    const draft = buildConfirmEventPayload(
+      parsed,
+      eventCalendars.selected.id,
+      eventTraceId,
+      sourceDescription,
+      sourceIdentity,
+    );
 
     await pendingActionsRepository.upsertConfirmEventAction(
       user.id,
@@ -749,8 +874,27 @@ async function parseMessageAsEvent(
       endTime: draft.endTime,
     });
 
-    return replyEventDraft(ctx, user, draft, processingMessage);
+    if (sourceIdempotencyKey) {
+      await eventSourceClaimsRepository.markEventSourceCompleted(sourceIdempotencyKey);
+    }
+    const result = await replyEventDraft(ctx, user, draft, processingMessage);
+
+    console.info("[event-preview:sent]", {
+      traceId: eventTraceId,
+      sourceTelegramChatId: sourceIdentity.chatId,
+      sourceTelegramMessageId: sourceIdentity.messageId,
+      sourceTelegramUpdateId: sourceIdentity.updateId,
+    });
+
+    return result;
   } catch (error) {
+    if (sourceIdempotencyKey) {
+      await eventSourceClaimsRepository.markEventSourceFailed(
+        sourceIdempotencyKey,
+        error instanceof Error ? error.name : typeof error,
+      );
+    }
+
     console.error("Event message processing failed:", {
       operation: "process_event_message",
       userId: user.id,
@@ -1658,21 +1802,42 @@ bot?.callbackQuery("google:disconnect:confirm", async (ctx) => {
 });
 
 bot?.on("message", async (ctx) => {
+  const handlerName = "bot.on(message):event-router";
+  const handlerContext = getMessageHandlerLogContext(ctx, handlerName);
+
+  console.info("[message-handler:entered]", handlerContext);
+
+  if (shouldIgnoreBotAuthoredMessage({
+    ctxFrom: ctx.from,
+    messageFrom: ctx.message?.from,
+    botId: configuredBotId,
+  })) {
+    logEventAnalysisIgnored(ctx, "bot_authored_message", handlerName);
+
+    return;
+  }
+
   const text = extractMessageText(ctx);
 
   if (ctx.message.text?.startsWith("/")) {
+    logEventAnalysisIgnored(ctx, "command", handlerName);
+
     return;
   }
 
   const from = ctx.from;
 
   if (!from) {
+    logEventAnalysisIgnored(ctx, "missing_sender", handlerName);
+
     return;
   }
 
   const user = await upsertTelegramUser(ctx);
 
   if (!user) {
+    logEventAnalysisIgnored(ctx, "user_upsert_failed", handlerName);
+
     return;
   }
 
@@ -1684,17 +1849,23 @@ bot?.on("message", async (ctx) => {
       return ctx.reply(messages.invalidCalendarName(language));
     }
 
+    logEventAnalysisIgnored(ctx, "no_text_or_caption", handlerName);
+
     return ctx.reply(messages.textOnlyEventInput(language));
   }
 
   if (!pendingAction) {
-    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx));
+    logEventAnalysisAccepted(ctx, handlerName);
+
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx), getEventSourceIdentity(ctx));
   }
 
   if (pendingAction.type === "confirm_event") {
     await pendingActionsRepository.deleteByUserIdAndType(user.id, "confirm_event");
 
-    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx));
+    logEventAnalysisAccepted(ctx, handlerName);
+
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx), getEventSourceIdentity(ctx));
   }
 
   if (new Date(pendingAction.expires_at).getTime() <= Date.now()) {
@@ -1710,7 +1881,9 @@ bot?.on("message", async (ctx) => {
   const name = validateCalendarName(text);
 
   if (pendingAction.type === "edit_event") {
-    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx));
+    logEventAnalysisAccepted(ctx, handlerName);
+
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx), getEventSourceIdentity(ctx));
   }
 
   if (pendingAction.type === "rename_calendar") {
@@ -1791,7 +1964,9 @@ bot?.on("message", async (ctx) => {
   }
 
   if (pendingAction.type !== "create_calendar") {
-    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx));
+    logEventAnalysisAccepted(ctx, handlerName);
+
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx), getEventSourceIdentity(ctx));
   }
 
   if (!name) {

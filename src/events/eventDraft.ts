@@ -21,6 +21,9 @@ export type ConfirmEventPayload = {
   eventUrl: string | null;
   locationUrl: string | null;
   sourceUrl: string | null;
+  sourceTelegramChatId: string | null;
+  sourceTelegramMessageId: string | null;
+  sourceTelegramUpdateId: string | null;
   calendarId: string;
 };
 
@@ -74,15 +77,29 @@ export function parseConfirmEventPayload(payload: unknown): ConfirmEventPayload 
     eventUrl: normalizeNullableString(candidate.eventUrl),
     locationUrl: normalizeNullableString(candidate.locationUrl),
     sourceUrl: normalizeNullableString(candidate.sourceUrl),
+    sourceTelegramChatId: normalizeNullableString(candidate.sourceTelegramChatId),
+    sourceTelegramMessageId: normalizeNullableString(candidate.sourceTelegramMessageId),
+    sourceTelegramUpdateId: normalizeNullableString(candidate.sourceTelegramUpdateId),
     calendarId,
   };
 }
+
+export type ConfirmEventSourceIdentity = {
+  chatId: string | null;
+  messageId: string | null;
+  updateId: string | null;
+};
 
 export function buildConfirmEventPayload(
   parsed: ParsedEvent,
   calendarId: string,
   eventTraceId = randomUUID(),
   sourceDescription: string | null = null,
+  sourceIdentity: ConfirmEventSourceIdentity = {
+    chatId: null,
+    messageId: null,
+    updateId: null,
+  },
 ): ConfirmEventPayload {
   return {
     payloadVersion: CONFIRM_EVENT_PAYLOAD_VERSION,
@@ -102,6 +119,9 @@ export function buildConfirmEventPayload(
     eventUrl: parsed.eventUrl,
     locationUrl: parsed.locationUrl,
     sourceUrl: parsed.sourceUrl,
+    sourceTelegramChatId: sourceIdentity.chatId,
+    sourceTelegramMessageId: sourceIdentity.messageId,
+    sourceTelegramUpdateId: sourceIdentity.updateId,
     calendarId,
   } satisfies ConfirmEventPayload;
 }
