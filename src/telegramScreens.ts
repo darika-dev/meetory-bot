@@ -50,10 +50,43 @@ export function emptyCalendarsKeyboard(language: Language) {
 }
 
 export function mainCalendarKeyboard(language: Language) {
-  return new InlineKeyboard()
-    .text(messages.calendarsButton(language), callbackData.listCalendars)
+  return addCalendarsEventsRow(new InlineKeyboard(), language)
     .row()
     .text(messages.newCalendarButton(language), callbackData.createCalendar);
+}
+
+function addCalendarsEventsRow(keyboard: InlineKeyboard, language: Language) {
+  return keyboard
+    .text(messages.calendarsButton(language), callbackData.listCalendars)
+    .text(messages.eventsButton(language), callbackData.eventsMenu);
+}
+
+export function eventsMenuKeyboard(language: Language) {
+  return addEventsMenuRows(new InlineKeyboard(), language);
+}
+
+export function calendarEventsReplyOptions(input: {
+  language: Language;
+  includeNavigation: boolean;
+}) {
+  return {
+    parse_mode: "HTML" as const,
+    link_preview_options: {
+      is_disabled: true,
+    },
+    reply_markup: input.includeNavigation ? eventsMenuKeyboard(input.language) : undefined,
+  };
+}
+
+function addEventsMenuRows(keyboard: InlineKeyboard, language: Language) {
+  return keyboard
+    .text(messages.todayButton(language), callbackData.eventsToday)
+    .text(messages.tomorrowButton(language), callbackData.eventsTomorrow)
+    .row()
+    .text(messages.thisWeekendButton(language), callbackData.eventsWeekend)
+    .text(messages.nextSevenDaysButton(language), callbackData.eventsNext7Days)
+    .row()
+    .text(messages.backButton(language), callbackData.mainMenu);
 }
 
 export function createCalendarCancelKeyboard(language: Language) {
@@ -209,5 +242,5 @@ export function eventSavedKeyboard(input: {
     keyboard.url(messages.openGoogleCalendarButton(input.language), input.htmlLink).row();
   }
 
-  return keyboard.text(messages.calendarsButton(input.language), callbackData.listCalendars);
+  return addCalendarsEventsRow(keyboard, input.language);
 }

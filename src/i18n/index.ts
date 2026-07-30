@@ -36,6 +36,11 @@ export const callbackData = {
   cancelGoogleDisconnect: "google:disconnect:cancel",
   cancelRenameCalendar: "calendar:rename:cancel",
   mainMenu: "main:menu",
+  eventsMenu: "events:menu",
+  eventsToday: "events:today",
+  eventsTomorrow: "events:tomorrow",
+  eventsWeekend: "events:weekend",
+  eventsNext7Days: "events:7d",
   eventCalendar: "event:calendar",
   eventBack: "event:back",
   eventSave: "event:save",
@@ -324,6 +329,30 @@ export const messages = {
   eventBatchPartialFailure(language: Language) {
     return t(language).event.batchPartialFailure;
   },
+  eventsMenuTitle(language: Language) {
+    return t(language).eventList.menuTitle;
+  },
+  eventsPeriodTitle(language: Language, kind: "today" | "tomorrow" | "weekend" | "next7days") {
+    return t(language).eventList.periodTitles[kind];
+  },
+  emptyEventsForAllCalendars(language: Language, kind: "today" | "tomorrow" | "weekend" | "next7days") {
+    return t(language).eventList.emptyAllCalendars[kind];
+  },
+  calendarEventsLoadErrors(language: Language) {
+    return t(language).eventList.calendarLoadErrors;
+  },
+  allCalendarEventsLoadFailed(language: Language) {
+    return t(language).eventList.allCalendarsLoadFailed;
+  },
+  eventListTimezoneMissing(language: Language) {
+    return t(language).eventList.timezoneMissing;
+  },
+  eventListPossiblyStillInProgress(language: Language) {
+    return t(language).eventList.possiblyStillInProgress;
+  },
+  eventListAllDay(language: Language) {
+    return t(language).eventList.allDay;
+  },
   help(language: Language) {
     return t(language).help;
   },
@@ -372,6 +401,21 @@ export const messages = {
   },
   calendarsButton(language: Language) {
     return t(language).buttons.calendars;
+  },
+  eventsButton(language: Language) {
+    return t(language).buttons.events;
+  },
+  todayButton(language: Language) {
+    return t(language).buttons.today;
+  },
+  tomorrowButton(language: Language) {
+    return t(language).buttons.tomorrow;
+  },
+  thisWeekendButton(language: Language) {
+    return t(language).buttons.thisWeekend;
+  },
+  nextSevenDaysButton(language: Language) {
+    return t(language).buttons.next7Days;
   },
   cancelButton(language: Language) {
     return t(language).buttons.cancel;

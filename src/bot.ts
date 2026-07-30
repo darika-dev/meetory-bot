@@ -16,6 +16,15 @@ import {
   updateDraftField,
 } from "./events/eventDraftEditing.js";
 import { discardEventDraft } from "./events/eventDraftCancel.js";
+import { formatCalendarEventGroupMessages } from "./events/calendarEvents.js";
+import {
+  getTodayRange,
+  getNextSevenDaysRange,
+  getTomorrowRange,
+  getWeekendRange,
+  type EventRangeKind,
+} from "./events/eventRanges.js";
+import { getEventsFromUserCalendars } from "./events/userCalendarEvents.js";
 import { parseEventWaitingForCalendarPayload } from "./events/eventWaitingForCalendar.js";
 import {
   extractLinksFromTextEntities,
@@ -34,6 +43,7 @@ import {
   cleanupDeletedCalendar,
   createCalendarForUser,
   createGoogleCalendarEvent,
+  getGoogleAccountTimeZoneForUser,
   GoogleEventBatchPartialFailureError,
   deleteRegistryGoogleCalendar,
   deleteCalendarForUser,
@@ -51,10 +61,12 @@ import {
   connectGoogleKeyboard,
   createCalendarCancelKeyboard,
   emptyCalendarsKeyboard,
+  calendarEventsReplyOptions,
   eventCalendarSelectionKeyboard,
   eventDraftKeyboard,
   eventEditFieldKeyboard,
   eventEditMenuKeyboard,
+  eventsMenuKeyboard,
   eventSavedKeyboard,
   googleDisconnectConfirmKeyboard,
   mainCalendarKeyboard,
@@ -597,6 +609,96 @@ async function getSelectedEventCalendar(user: usersRepository.User, calendarId: 
     summary: checked.metadata.summary,
     timeZone: checked.metadata.timeZone ?? "UTC",
   } satisfies ResolvedEventCalendar;
+}
+
+type EventsRangeType = EventRangeKind;
+
+function computeEventsRange(kind: EventsRangeType, timeZone: string, now = new Date()) {
+  if (kind === "today") {
+    return getTodayRange({ now, timeZone });
+  }
+
+  if (kind === "tomorrow") {
+    return getTomorrowRange({ now, timeZone });
+  }
+
+  if (kind === "weekend") {
+    return getWeekendRange({ now, timeZone });
+  }
+
+  return getNextSevenDaysRange({ now, timeZone });
+}
+
+async function replyEventsForRange(
+  target: ReplyTarget,
+  user: usersRepository.User,
+  kind: EventsRangeType,
+) {
+  const language = getLanguage(user.language);
+  const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
+
+  if (!googleConnection) {
+    return target.reply(messages.welcome(language), {
+      reply_markup: connectGoogleKeyboard(user.telegram_id, language),
+    });
+  }
+
+  const calendarRecords = await calendarsRepository.findForUser(user.id);
+
+  if (calendarRecords.length === 0) {
+    return target.reply(messages.noCalendars(language), {
+      reply_markup: noCalendarsKeyboard(language),
+    });
+  }
+
+  const now = new Date();
+  const timeZone = await getGoogleAccountTimeZoneForUser(user.id) ?? "UTC";
+  const range = computeEventsRange(kind, timeZone, now);
+  const result = await getEventsFromUserCalendars({
+    userId: user.id,
+    range,
+    now,
+    timeZone,
+  });
+
+  if (result.groups.length === 0 && result.errors.length === result.totalCalendars && result.totalCalendars > 0) {
+    return target.reply(messages.allCalendarEventsLoadFailed(language), {
+      reply_markup: eventsMenuKeyboard(language),
+    });
+  }
+
+  if (result.groups.length === 0) {
+    return target.reply(messages.emptyEventsForAllCalendars(language, kind), {
+      reply_markup: eventsMenuKeyboard(language),
+    });
+  }
+
+  const chunks = formatCalendarEventGroupMessages({
+    periodTitle: messages.eventsPeriodTitle(language, kind),
+    groups: result.groups,
+    errorCalendarNames: result.errors.map((error) => error.calendar.name),
+    language,
+    timeZone,
+  });
+
+  for (const [index, chunk] of chunks.entries()) {
+    await target.reply(chunk.text, calendarEventsReplyOptions({
+      language,
+      includeNavigation: index === chunks.length - 1,
+    }));
+  }
+}
+
+async function showEventsMenu(target: ReplyTarget, user: usersRepository.User) {
+  const language = getLanguage(user.language);
+
+  return target.reply(messages.eventsMenuTitle(language), {
+    reply_markup: eventsMenuKeyboard(language),
+  });
+}
+
+async function handleEventsRange(target: ReplyTarget, user: usersRepository.User, kind: EventsRangeType) {
+  return replyEventsForRange(target, user, kind);
 }
 
 function formatEventDraftMessage(
@@ -1301,6 +1403,18 @@ bot?.command("calendars", async (ctx) => {
   return replyCalendarsList(ctx, user);
 });
 
+bot?.command("events", async (ctx) => {
+  const user = await upsertTelegramUser(ctx);
+
+  if (!user) {
+    return ctx.reply("Meetory is running.");
+  }
+
+  await clearRenamePendingAction(user.id);
+
+  return showEventsMenu(ctx, user);
+});
+
 bot?.command("help", async (ctx) => {
   const user = await upsertTelegramUser(ctx);
   const language = getLanguage(user?.language);
@@ -1382,6 +1496,63 @@ bot?.callbackQuery("main:menu", async (ctx) => {
   await clearRenamePendingAction(user.id);
 
   return showHome(ctx, user);
+});
+
+bot?.callbackQuery("events:menu", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  await clearRenamePendingAction(user.id);
+
+  return showEventsMenu(ctx, user);
+});
+
+bot?.callbackQuery("events:today", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  return handleEventsRange(ctx, user, "today");
+});
+
+bot?.callbackQuery("events:tomorrow", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  return handleEventsRange(ctx, user, "tomorrow");
+});
+
+bot?.callbackQuery("events:weekend", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  return handleEventsRange(ctx, user, "weekend");
+});
+
+bot?.callbackQuery("events:7d", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  return handleEventsRange(ctx, user, "next7days");
 });
 
 bot?.callbackQuery(/^calendar:open:/, async (ctx) => {

@@ -86,6 +86,26 @@
     "dailyRangeSaved": "✅ {count} events saved.\n\n🎫 {title}\n📅 {dateRange}\n🕒 {timeRange}\n📅 {calendarName}",
     "batchPartialFailure": "Could not save all events. Some events may have been created in Google Calendar. Check the calendar before trying again."
   },
+  "eventList": {
+    "menuTitle": "📅 Events",
+    "periodTitles": {
+      "today": "📅 Today",
+      "tomorrow": "📅 Tomorrow",
+      "weekend": "📅 This weekend",
+      "next7days": "📅 Next 7 days"
+    },
+    "emptyAllCalendars": {
+      "today": "No events today in any calendar.",
+      "tomorrow": "No events tomorrow in any calendar.",
+      "weekend": "No events this weekend in any calendar.",
+      "next7days": "No events in the next 7 days in any calendar."
+    },
+    "calendarLoadErrors": "Couldn't load events from:",
+    "allCalendarsLoadFailed": "Couldn't load events from your calendars. Please try again later.",
+    "timezoneMissing": "Calendar timezone is unavailable. Please try again later.",
+    "possiblyStillInProgress": "Possibly still in progress",
+    "allDay": "All day"
+  },
   "disconnect": {
     "notConnected": "Google Calendar is not connected.",
     "confirmBase": "Disconnect Google Calendar?\n\nMeetory will revoke access to your Google Calendar and remove the saved authorization.",
@@ -94,7 +114,7 @@
     "cancelled": "Google Calendar disconnect cancelled.",
     "error": "Could not disconnect Google Calendar. Please try again later."
   },
-  "help": "Commands:\n/start - open the main menu\n/newcalendar - create a calendar\n/calendars - show calendars\n/disconnect - disconnect Google Calendar\n/help - help\n\nForward an event announcement or send its details as text.\nMeetory will extract the date, time and place and ask where to save it.",
+  "help": "Commands:\n/start - open the main menu\n/newcalendar - create a calendar\n/calendars - show calendars\n/events - show upcoming events\n/disconnect - disconnect Google Calendar\n/help - help\n\nForward an event announcement or send its details as text.\nMeetory will extract the date, time and place and ask where to save it.",
   "buttons": {
     "connectGoogle": "🔗 Connect Google",
     "connectGoogleCalendar": "🔗 Connect Google Calendar",
@@ -105,8 +125,13 @@
     "newCalendar": "➕ New calendar",
     "joinViaInvite": "🔗 Join via invite link",
     "calendars": "📅 Calendars",
+    "events": "📋 Events",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "thisWeekend": "This weekend",
+    "next7Days": "Next 7 days",
     "cancel": "✖️ Cancel",
-    "back": "🔙 Back",
+    "back": "← Back",
     "makeActive": "⭐ Make active",
     "rename": "✏️ Rename",
     "delete": "🗑 Delete",
@@ -117,7 +142,7 @@
     "editLocation": "📍 Location",
     "editPrice": "💰 Price",
     "editDescription": "📄 Description",
-    "openGoogleCalendar": "Open in Google Calendar",
+    "openGoogleCalendar": "📅 Open in Calendar",
     "cancelEditing": "✖️ Cancel editing",
     "disconnectConfirm": "Disconnect Google"
   }

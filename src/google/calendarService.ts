@@ -1,4 +1,4 @@
-import { google } from "googleapis";
+import { google, type calendar_v3 } from "googleapis";
 import { createGoogleOAuthClient } from "./oauth.js";
 import { classifyGoogleApiError, type GoogleApiErrorKind } from "./googleApiErrors.js";
 import type { GoogleConnection } from "../repositories/googleConnections.js";
@@ -11,6 +11,9 @@ import { addCalendarDays, addMinutesToLocalTime, buildLocalDateTime } from "./lo
 
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
 const MAX_DAILY_RANGE_DAYS = 31;
+export const MEETORY_END_TIME_PROPERTY = "meetoryEndTime";
+export const MEETORY_END_TIME_EXPLICIT = "explicit";
+export const MEETORY_END_TIME_ESTIMATED = "estimated";
 
 export type CreatedGoogleCalendar = {
   googleCalendarId: string;
@@ -60,6 +63,11 @@ export type CreatedGoogleEvent = {
   id: string | null;
   htmlLink: string | null;
   count: number;
+};
+
+export type GoogleCalendarEventListResult = {
+  events: calendar_v3.Schema$Event[];
+  metadata: GoogleCalendarMetadata;
 };
 
 export class GoogleEventBatchPartialFailureError extends Error {
@@ -199,6 +207,12 @@ export function buildEventDescription(input: GoogleEventDraft) {
 }
 
 export function buildBaseEventRequestBody(input: GoogleEventDraft) {
+  const meetoryEndTime = input.isAllDay || !input.startTime
+    ? null
+    : input.endTime
+      ? MEETORY_END_TIME_EXPLICIT
+      : MEETORY_END_TIME_ESTIMATED;
+
   return {
     summary: input.title,
     location: input.location ?? undefined,
@@ -212,6 +226,7 @@ export function buildBaseEventRequestBody(input: GoogleEventDraft) {
     extendedProperties: {
       private: {
         meetory: "true",
+        ...(meetoryEndTime ? { [MEETORY_END_TIME_PROPERTY]: meetoryEndTime } : {}),
       },
     },
   } as Record<string, unknown>;
@@ -409,6 +424,18 @@ async function getCalendarListTimeZone(
   });
 
   return response.data.timeZone ?? null;
+}
+
+export async function getGoogleAccountTimeZoneForUser(userId: string) {
+  const connection = await googleConnectionsRepository.findByUserId(userId);
+
+  if (!connection) {
+    return null;
+  }
+
+  const calendar = buildAuthorizedCalendarClient(connection);
+
+  return getCalendarListTimeZone(calendar, "primary");
 }
 
 async function resolveEventTimeZone(input: {
@@ -657,4 +684,54 @@ export async function createGoogleCalendarEvent(input: {
     htmlLink: createdEvents[0]?.htmlLink ?? null,
     count: createdEvents.length,
   } satisfies CreatedGoogleEvent;
+}
+
+export async function getCalendarEvents(input: {
+  userId: string;
+  calendarId: string;
+  rangeStart: string;
+  rangeEnd: string;
+  timeZone: string;
+}) {
+  const isMember = await calendarMembersRepository.isMember(input.userId, input.calendarId);
+
+  if (!isMember) {
+    throw new Error("Calendar not found or access denied");
+  }
+
+  const calendarRecord = await calendarsRepository.findById(input.calendarId);
+
+  if (!calendarRecord) {
+    throw new Error("Calendar not found");
+  }
+
+  const connection = await getCalendarConnection(calendarRecord);
+  const metadata = await getCalendarMetadataByGoogleId({
+    connection,
+    googleCalendarId: calendarRecord.google_calendar_id,
+  });
+  const calendar = buildAuthorizedCalendarClient(connection);
+  const events: calendar_v3.Schema$Event[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const response = await calendar.events.list({
+      calendarId: calendarRecord.google_calendar_id,
+      timeMin: input.rangeStart,
+      timeMax: input.rangeEnd,
+      singleEvents: true,
+      orderBy: "startTime",
+      showDeleted: false,
+      timeZone: input.timeZone,
+      pageToken,
+    });
+
+    events.push(...(response.data.items ?? []));
+    pageToken = response.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return {
+    events,
+    metadata,
+  };
 }

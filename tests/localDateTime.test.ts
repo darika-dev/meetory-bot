@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildGoogleEventRequestBodies, type GoogleEventDraft } from "../src/google/calendarService.js";
+import {
+  buildGoogleEventRequestBodies,
+  MEETORY_END_TIME_ESTIMATED,
+  MEETORY_END_TIME_EXPLICIT,
+  MEETORY_END_TIME_PROPERTY,
+  type GoogleEventDraft,
+} from "../src/google/calendarService.js";
 import { addMinutesToLocalTime, buildLocalDateTime } from "../src/google/localDateTime.js";
 import { buildConfirmEventPayload, parseConfirmEventPayload } from "../src/events/eventDraft.js";
 import type { ParsedEvent } from "../src/ai/eventParser.js";
@@ -26,6 +32,14 @@ function timedDraft(overrides: Partial<GoogleEventDraft> = {}): GoogleEventDraft
 
 function getDateTime(value: unknown) {
   return (value as { dateTime?: string }).dateTime;
+}
+
+function getMeetoryEndTime(value: Record<string, unknown>) {
+  return (
+    value.extendedProperties as {
+      private?: Record<string, string>;
+    } | undefined
+  )?.private?.[MEETORY_END_TIME_PROPERTY];
 }
 
 function parsedEvent(): ParsedEvent {
@@ -83,6 +97,7 @@ test("single timed request body uses local datetime and calendar timezone", () =
   assert.equal(getDateTime(requestBody.start), "2026-08-01T20:00:00");
   assert.equal(getDateTime(requestBody.end), "2026-08-01T23:00:00");
   assert.equal((requestBody.start as { timeZone?: string }).timeZone, "Europe/Nicosia");
+  assert.equal(getMeetoryEndTime(requestBody), MEETORY_END_TIME_EXPLICIT);
 });
 
 test("confirm_event serialization path preserves local time for Google request", () => {
@@ -123,6 +138,28 @@ test("single missing end time uses default duration locally", () => {
 
   assert.equal(getDateTime(requestBody.start), "2026-08-01T23:30:00");
   assert.equal(getDateTime(requestBody.end), "2026-08-02T00:30:00");
+  assert.equal(getMeetoryEndTime(requestBody), MEETORY_END_TIME_ESTIMATED);
+});
+
+test("explicit one-hour event is not treated as estimated", () => {
+  const [requestBody] = buildGoogleEventRequestBodies(timedDraft({
+    startTime: "12:00",
+    endTime: "13:00",
+  }), "Europe/Nicosia");
+
+  assert.equal(getDateTime(requestBody.end), "2026-08-01T13:00:00");
+  assert.equal(getMeetoryEndTime(requestBody), MEETORY_END_TIME_EXPLICIT);
+});
+
+test("all-day event does not include meetoryEndTime metadata", () => {
+  const [requestBody] = buildGoogleEventRequestBodies(timedDraft({
+    startTime: null,
+    endTime: null,
+    isAllDay: true,
+  }), "Europe/Nicosia");
+
+  assert.deepEqual(requestBody.start, { date: "2026-08-01" });
+  assert.equal(getMeetoryEndTime(requestBody), undefined);
 });
 
 test("daily_range request bodies preserve local time and timezone", () => {

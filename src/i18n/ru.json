@@ -86,6 +86,26 @@
     "dailyRangeSaved": "✅ Сохранено событий: {count}.\n\n🎫 {title}\n📅 {dateRange}\n🕒 {timeRange}\n📅 {calendarName}",
     "batchPartialFailure": "Не удалось сохранить все события. Часть событий могла быть создана в Google Calendar. Проверьте календарь перед повторной попыткой."
   },
+  "eventList": {
+    "menuTitle": "📅 События",
+    "periodTitles": {
+      "today": "📅 Сегодня",
+      "tomorrow": "📅 Завтра",
+      "weekend": "📅 На выходных",
+      "next7days": "📅 Ближайшие 7 дней"
+    },
+    "emptyAllCalendars": {
+      "today": "Сегодня событий нет ни в одном календаре.",
+      "tomorrow": "На завтра событий нет ни в одном календаре.",
+      "weekend": "На этих выходных событий нет ни в одном календаре.",
+      "next7days": "На ближайшие 7 дней событий нет ни в одном календаре."
+    },
+    "calendarLoadErrors": "Не удалось загрузить события:",
+    "allCalendarsLoadFailed": "Не удалось загрузить события из календарей. Попробуйте ещё раз позже.",
+    "timezoneMissing": "Timezone календаря недоступен. Попробуйте ещё раз позже.",
+    "possiblyStillInProgress": "Возможно, ещё идёт",
+    "allDay": "Весь день"
+  },
   "disconnect": {
     "notConnected": "Google Calendar сейчас не подключён.",
     "confirmBase": "Отключить Google Calendar?\n\nMeetory отзовёт доступ к вашему Google Calendar и удалит сохранённую авторизацию.",
@@ -94,7 +114,7 @@
     "cancelled": "Отключение Google Calendar отменено.",
     "error": "Не удалось отключить Google Calendar. Попробуйте ещё раз позже."
   },
-  "help": "Команды:\n/start — открыть главное меню\n/newcalendar — создать календарь\n/calendars — показать календари\n/disconnect — отключить Google Calendar\n/help — помощь\n\nПерешлите анонс мероприятия или отправьте его описание текстом.\nMeetory распознает дату, время и место и предложит выбрать календарь.",
+  "help": "Команды:\n/start — открыть главное меню\n/newcalendar — создать календарь\n/calendars — показать календари\n/events — показать предстоящие события\n/disconnect — отключить Google Calendar\n/help — помощь\n\nПерешлите анонс мероприятия или отправьте его описание текстом.\nMeetory распознает дату, время и место и предложит выбрать календарь.",
   "buttons": {
     "connectGoogle": "🔗 Подключить Google",
     "connectGoogleCalendar": "🔗 Подключить Google",
@@ -105,8 +125,13 @@
     "newCalendar": "➕ Новый календарь",
     "joinViaInvite": "🔗 Присоединиться по ссылке",
     "calendars": "📅 Календари",
+    "events": "📋 События",
+    "today": "Сегодня",
+    "tomorrow": "Завтра",
+    "thisWeekend": "Выходные",
+    "next7Days": "7 дней",
     "cancel": "✖️ Отмена",
-    "back": "🔙 Назад",
+    "back": "← Назад",
     "makeActive": "⭐ Сделать активным",
     "rename": "✏️ Переименовать",
     "delete": "🗑 Удалить",
@@ -117,7 +142,7 @@
     "editLocation": "📍 Место",
     "editPrice": "💰 Цена",
     "editDescription": "📄 Описание",
-    "openGoogleCalendar": "Открыть в Google Calendar",
+    "openGoogleCalendar": "📅 Открыть в календаре",
     "cancelEditing": "✖️ Отменить",
     "disconnectConfirm": "Отключить Google"
   }
