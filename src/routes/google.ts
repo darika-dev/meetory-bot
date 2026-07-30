@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { bot } from "../bot.js";
+import { bot, sendCalendarJoinPreview } from "../bot.js";
 import {
   createGoogleAuthorizationUrl,
   createGoogleOAuthClient,
@@ -10,6 +10,7 @@ import { checkCalendarAvailability, cleanupDeletedCalendar } from "../google/cal
 import { getLanguage, messages } from "../i18n/index.js";
 import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
+import * as pendingActionsRepository from "../repositories/pendingActions.js";
 import * as usersRepository from "../repositories/users.js";
 import { verifyOAuthState } from "../security/oauthState.js";
 import { encryptToken } from "../security/tokenEncryption.js";
@@ -82,6 +83,14 @@ function hasGrantedCalendarScope(scope?: string | null) {
   }
 
   return scope.split(/\s+/).includes(GOOGLE_OAUTH_SCOPES[0]);
+}
+
+function parseCalendarJoinPayload(payload: unknown) {
+  const rawToken = typeof payload === "object" && payload !== null
+    ? (payload as { rawToken?: unknown }).rawToken
+    : null;
+
+  return typeof rawToken === "string" && rawToken ? { rawToken } : null;
 }
 
 async function revokeGrantedToken(token?: string | null) {
@@ -249,6 +258,29 @@ googleRouter.get("/callback", async (req, res) => {
       : `${messages.googleConnected(language)} Return to Telegram.`;
 
     try {
+      const pendingJoinAction = await pendingActionsRepository.findByUserIdAndType(user.id, "calendar_join");
+      const pendingJoin = pendingJoinAction && new Date(pendingJoinAction.expires_at).getTime() > Date.now()
+        ? parseCalendarJoinPayload(pendingJoinAction.payload)
+        : null;
+
+      if (pendingJoin) {
+        await sendCalendarJoinPreview({
+          reply: async (text, options) => {
+            if (!bot) {
+              throw new Error("Telegram bot is not configured");
+            }
+
+            return bot.api.sendMessage(user.telegram_id, text, options);
+          },
+        }, user, pendingJoin.rawToken);
+
+        return res.send(html(callbackMessage));
+      }
+
+      if (pendingJoinAction) {
+        await pendingActionsRepository.deleteByUserIdAndType(user.id, "calendar_join");
+      }
+
       const calendars = await calendarsRepository.findForUser(user.id);
 
       if (calendars.length === 0) {

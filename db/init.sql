@@ -174,6 +174,18 @@ CREATE TABLE IF NOT EXISTS user_settings (
     CHECK (weekend_digest_weekday BETWEEN 1 AND 7)
 );
 
+CREATE TABLE IF NOT EXISTS calendar_invites (
+  id BIGSERIAL PRIMARY KEY,
+  calendar_id BIGINT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  used_count INTEGER NOT NULL DEFAULT 0,
+  max_uses INTEGER NULL
+);
+
 ALTER TABLE user_settings
   DROP CONSTRAINT IF EXISTS user_settings_tomorrow_digest_time_check;
 
@@ -226,3 +238,10 @@ CREATE INDEX IF NOT EXISTS event_source_claims_user_id_idx
 
 CREATE INDEX IF NOT EXISTS user_settings_updated_at_idx
   ON user_settings(updated_at);
+
+CREATE INDEX IF NOT EXISTS calendar_invites_calendar_id_idx
+  ON calendar_invites(calendar_id);
+
+CREATE INDEX IF NOT EXISTS calendar_invites_active_calendar_idx
+  ON calendar_invites(calendar_id)
+  WHERE revoked_at IS NULL;

@@ -17,6 +17,13 @@ import {
 } from "./events/eventDraftEditing.js";
 import { discardEventDraft } from "./events/eventDraftCancel.js";
 import { getCalendarAccess, assertCalendarOwner } from "./calendars/calendarAccess.js";
+import {
+  createCalendarInviteLink,
+  getInvitePreviewByRawToken,
+  joinCalendarByRawToken,
+  parseCalendarJoinStartPayload,
+} from "./calendars/calendarInvites.js";
+import { getCalendarInviteTtlDays, getConfiguredTelegramBotUsername } from "./config.js";
 import { formatCalendarEventGroupMessages } from "./events/calendarEvents.js";
 import {
   getTodayRange,
@@ -60,9 +67,11 @@ import {
   calendarCardKeyboard,
   calendarDeleteConfirmKeyboard,
   calendarLeaveConfirmKeyboard,
+  calendarInviteReplyOptions,
   calendarMemberRemoveConfirmKeyboard,
   calendarMemberRemoveListKeyboard,
   calendarMembersKeyboard,
+  alreadyCalendarMemberKeyboard,
   calendarsListKeyboard,
   connectGoogleKeyboard,
   createCalendarCancelKeyboard,
@@ -74,6 +83,8 @@ import {
   eventEditMenuKeyboard,
   eventsMenuKeyboard,
   eventSavedKeyboard,
+  formatCalendarInviteMessage,
+  formatCalendarJoinPreview,
   formatCalendarMembers,
   formatMainMenuMessage,
   formatSettingsMessage,
@@ -86,6 +97,8 @@ import {
   reconnectGoogleKeyboard,
   renameCalendarCancelKeyboard,
   settingsKeyboard,
+  calendarJoinPreviewKeyboard,
+  calendarJoinedKeyboard,
   tomorrowDigestSettingsKeyboard,
   weekendDigestSettingsKeyboard,
   type CalendarMemberListItem,
@@ -125,7 +138,7 @@ function createBot() {
   }
 }
 
-type ReplyTarget = {
+export type ReplyTarget = {
   reply: Context["reply"];
 };
 
@@ -350,6 +363,139 @@ function formatMemberDisplayName(member: usersRepository.User, language: ReturnT
   }
 
   return messages.calendarMemberFallbackName(language);
+}
+
+function parseCalendarJoinPayload(payload: unknown) {
+  const rawToken = typeof payload === "object" && payload !== null
+    ? (payload as { rawToken?: unknown }).rawToken
+    : null;
+
+  return typeof rawToken === "string" && rawToken ? { rawToken } : null;
+}
+
+async function getTelegramBotUsername() {
+  const configured = getConfiguredTelegramBotUsername();
+
+  if (configured) {
+    return configured;
+  }
+
+  const me = await bot?.api.getMe();
+
+  if (!me?.username) {
+    throw new Error("Telegram bot username is unavailable");
+  }
+
+  return me.username;
+}
+
+export async function sendCalendarJoinPreview(target: ReplyTarget, user: usersRepository.User, rawToken: string) {
+  const language = getLanguage(user.language);
+  const preview = await getInvitePreviewByRawToken(rawToken, user.id);
+
+  if (!preview) {
+    await pendingActionsRepository.deleteByUserIdAndType(user.id, "calendar_join");
+
+    return target.reply(messages.invalidCalendarInvite(language));
+  }
+
+  const ownerName = preview.owner
+    ? formatMemberDisplayName(preview.owner, language)
+    : messages.calendarMemberFallbackName(language);
+
+  await pendingActionsRepository.deleteByUserIdAndType(user.id, "calendar_join");
+
+  if (preview.alreadyMember) {
+    return target.reply(messages.alreadyCalendarMember(language, preview.calendar.name), {
+      reply_markup: alreadyCalendarMemberKeyboard({
+        language,
+        calendarId: preview.calendar.id,
+      }),
+    });
+  }
+
+  return target.reply(formatCalendarJoinPreview({
+    language,
+    calendarName: preview.calendar.name,
+    ownerName,
+    memberCount: preview.memberCount,
+  }), {
+    reply_markup: calendarJoinPreviewKeyboard({
+      language,
+      rawToken,
+    }),
+  });
+}
+
+async function startCalendarJoinFlow(target: ReplyTarget, user: usersRepository.User, rawToken: string) {
+  const language = getLanguage(user.language);
+  const preview = await getInvitePreviewByRawToken(rawToken, user.id);
+
+  if (!preview) {
+    return target.reply(messages.invalidCalendarInvite(language));
+  }
+
+  const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
+
+  if (!googleConnection) {
+    await pendingActionsRepository.upsertCalendarJoinAction(
+      user.id,
+      { rawToken },
+      new Date(Date.now() + getCalendarInviteTtlDays() * 24 * 60 * 60 * 1000),
+    );
+
+    return target.reply(messages.welcome(language), {
+      reply_markup: connectGoogleKeyboard(user.telegram_id, language),
+    });
+  }
+
+  await pendingActionsRepository.deleteByUserIdAndType(user.id, "calendar_join");
+
+  return sendCalendarJoinPreview(target, user, rawToken);
+}
+
+async function showCalendarInvite(target: ReplyTarget, user: usersRepository.User, calendarId: string) {
+  const language = getLanguage(user.language);
+  const access = await getCalendarAccess(calendarId, user.id);
+
+  if (!access) {
+    return target.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  if (!access.isOwner) {
+    return target.reply(messages.deleteOwnerOnly(language));
+  }
+
+  const checked = await checkCalendarAvailability(access.calendar);
+
+  if (checked.status === "calendar_not_found") {
+    await cleanupDeletedCalendar(access.calendar);
+
+    return target.reply(messages.calendarDeletedInGoogle(language), {
+      reply_markup: noCalendarsKeyboard(language),
+    });
+  }
+
+  if (checked.status !== "available") {
+    return replyCalendarProblem(target, user, checked.status);
+  }
+
+  const created = await createCalendarInviteLink({
+    calendarId: access.calendar.id,
+    ownerUserId: user.id,
+    botUsername: await getTelegramBotUsername(),
+  });
+
+  return target.reply(formatCalendarInviteMessage({
+    language,
+    calendarName: checked.metadata.summary,
+    inviteLink: created.inviteLink,
+    ttlDays: created.ttlDays,
+  }), calendarInviteReplyOptions({
+    language,
+    calendarId: access.calendar.id,
+    inviteLink: created.inviteLink,
+  }));
 }
 
 function formatDateForLanguage(date: string, language: ReturnType<typeof getLanguage>) {
@@ -1537,6 +1683,12 @@ bot?.command("start", async (ctx) => {
     return ctx.reply("Meetory is running.");
   }
 
+  const joinToken = parseCalendarJoinStartPayload(ctx.message?.text);
+
+  if (joinToken) {
+    return startCalendarJoinFlow(ctx, user, joinToken);
+  }
+
   await clearRenamePendingAction(user.id);
 
   return showHome(ctx, user, "welcome");
@@ -2001,6 +2153,76 @@ bot?.callbackQuery(/^calendar:members:remove:/, async (ctx) => {
       language,
       calendarId: access.calendar.id,
       members: memberItems,
+    }),
+  });
+});
+
+bot?.callbackQuery(/^calendar:invite:/, async (ctx, next) => {
+  if ((ctx.callbackQuery.data ?? "").startsWith("calendar:invite:regenerate:")) {
+    return next();
+  }
+
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:invite:");
+
+  return showCalendarInvite(ctx, user, calendarId);
+});
+
+bot?.callbackQuery(/^calendar:invite:regenerate:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:invite:regenerate:");
+
+  return showCalendarInvite(ctx, user, calendarId);
+});
+
+bot?.callbackQuery(/^calendar:join:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const rawToken = getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:join:");
+  const joined = await joinCalendarByRawToken({
+    rawToken,
+    userId: user.id,
+  });
+
+  await pendingActionsRepository.deleteByUserIdAndType(user.id, "calendar_join");
+
+  if (!joined) {
+    return ctx.reply(messages.invalidCalendarInvite(language));
+  }
+
+  if (joined.wasAlreadyMember) {
+    return ctx.reply(messages.alreadyCalendarMember(language, joined.calendar.name), {
+      reply_markup: alreadyCalendarMemberKeyboard({
+        language,
+        calendarId: joined.calendar.id,
+      }),
+    });
+  }
+
+  await usersRepository.setActiveCalendar(user.id, joined.calendar.id);
+
+  return ctx.reply(messages.calendarJoinedSuccessfully(language, joined.calendar.name), {
+    reply_markup: calendarJoinedKeyboard({
+      language,
+      calendarId: joined.calendar.id,
     }),
   });
 });

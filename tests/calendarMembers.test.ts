@@ -36,12 +36,14 @@ test("calendar card shows members and owner admin actions", () => {
 
   assert.deepEqual(keyboard.map((row) => row.map((button) => button.text)), [
     ["👥 Members"],
+    ["➕ Invite"],
     ["✏️ Rename"],
     ["🗑 Delete"],
     ["← Back"],
   ]);
   assert.deepEqual(keyboard.map((row) => row.map(callback)), [
     [calendarMembersCallbackData("10")],
+    ["calendar:invite:10"],
     ["calendar:rename:10"],
     ["calendar:delete:10"],
     [callbackData.listCalendars],
@@ -101,10 +103,12 @@ test("owner members keyboard opens remove flow", () => {
   }).inline_keyboard;
 
   assert.deepEqual(keyboard.map((row) => row.map((button) => button.text)), [
+    ["➕ Invite"],
     ["➖ Remove member"],
     ["← Back"],
   ]);
   assert.deepEqual(keyboard.map((row) => row.map(callback)), [
+    ["calendar:invite:10"],
     [calendarMembersRemoveCallbackData("10")],
     ["calendar:open:10"],
   ]);

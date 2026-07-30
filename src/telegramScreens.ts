@@ -42,6 +42,18 @@ export function calendarLeaveConfirmCallbackData(calendarId: string) {
   return `calendar:leave-confirm:${calendarId}`;
 }
 
+export function calendarInviteCallbackData(calendarId: string) {
+  return `calendar:invite:${calendarId}`;
+}
+
+export function calendarInviteRegenerateCallbackData(calendarId: string) {
+  return `calendar:invite:regenerate:${calendarId}`;
+}
+
+export function calendarJoinConfirmCallbackData(rawToken: string) {
+  return `calendar:join:${rawToken}`;
+}
+
 export function eventCalendarCallbackData(calendarId: string) {
   return `event:calendar:${calendarId}`;
 }
@@ -398,6 +410,7 @@ export function calendarCardKeyboard(input: {
   keyboard.text(messages.membersButton(input.language), calendarMembersCallbackData(input.calendarId)).row();
 
   if (input.canManage) {
+    keyboard.text(messages.inviteButton(input.language), calendarInviteCallbackData(input.calendarId)).row();
     keyboard
       .text(messages.renameButton(input.language), calendarCallbackData("rename", input.calendarId))
       .row()
@@ -448,7 +461,11 @@ export function calendarMembersKeyboard(input: {
   const keyboard = new InlineKeyboard();
 
   if (input.canManage) {
-    keyboard.text(messages.removeMemberButton(input.language), calendarMembersRemoveCallbackData(input.calendarId)).row();
+    keyboard
+      .text(messages.inviteButton(input.language), calendarInviteCallbackData(input.calendarId))
+      .row()
+      .text(messages.removeMemberButton(input.language), calendarMembersRemoveCallbackData(input.calendarId))
+      .row();
   }
 
   if (input.canLeave) {
@@ -492,6 +509,95 @@ export function calendarLeaveConfirmKeyboard(language: Language, calendarId: str
     .text(messages.confirmLeaveCalendarButton(language), calendarLeaveConfirmCallbackData(calendarId))
     .row()
     .text(messages.cancelButton(language), calendarMembersCallbackData(calendarId));
+}
+
+export function formatCalendarInviteMessage(input: {
+  language: Language;
+  calendarName: string;
+  inviteLink: string;
+  ttlDays: number;
+}) {
+  return [
+    messages.calendarInviteTitle(input.language, input.calendarName),
+    "",
+    messages.calendarInviteDescription(input.language),
+    input.inviteLink,
+    "",
+    messages.calendarInviteExpiration(input.language, input.ttlDays),
+  ].join("\n");
+}
+
+export function calendarInviteKeyboard(input: {
+  language: Language;
+  calendarId: string;
+  inviteLink: string;
+}) {
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(input.inviteLink)}`;
+
+  return new InlineKeyboard()
+    .url(messages.shareInviteButton(input.language), shareUrl)
+    .row()
+    .text(messages.regenerateInviteButton(input.language), calendarInviteRegenerateCallbackData(input.calendarId))
+    .row()
+    .text(messages.backButton(input.language), calendarMembersCallbackData(input.calendarId));
+}
+
+export function calendarInviteReplyOptions(input: {
+  language: Language;
+  calendarId: string;
+  inviteLink: string;
+}) {
+  return {
+    link_preview_options: {
+      is_disabled: true,
+    },
+    reply_markup: calendarInviteKeyboard(input),
+  };
+}
+
+export function formatCalendarJoinPreview(input: {
+  language: Language;
+  calendarName: string;
+  ownerName: string;
+  memberCount: number;
+}) {
+  return messages.calendarJoinPreview(input.language, {
+    calendarName: input.calendarName,
+    ownerName: input.ownerName,
+    memberCount: input.memberCount,
+  });
+}
+
+export function calendarJoinPreviewKeyboard(input: {
+  language: Language;
+  rawToken: string;
+}) {
+  return new InlineKeyboard()
+    .text(messages.joinCalendarButton(input.language), calendarJoinConfirmCallbackData(input.rawToken))
+    .row()
+    .text(messages.cancelButton(input.language), callbackData.mainMenu);
+}
+
+export function calendarJoinedKeyboard(input: {
+  language: Language;
+  calendarId: string;
+}) {
+  return new InlineKeyboard()
+    .text(messages.openCalendarButton(input.language), calendarCallbackData("open", input.calendarId))
+    .row()
+    .text(messages.eventsButton(input.language), callbackData.eventsMenu)
+    .row()
+    .text(messages.settingsButton(input.language), callbackData.settingsMenu);
+}
+
+export function alreadyCalendarMemberKeyboard(input: {
+  language: Language;
+  calendarId: string;
+}) {
+  return new InlineKeyboard()
+    .text(messages.openCalendarButton(input.language), calendarCallbackData("open", input.calendarId))
+    .row()
+    .text(messages.backButton(input.language), callbackData.mainMenu);
 }
 
 export function calendarDeleteConfirmKeyboard(language: Language, calendarId: string) {

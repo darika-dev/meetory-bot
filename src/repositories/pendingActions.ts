@@ -6,7 +6,8 @@ export type PendingActionType =
   | "confirm_event"
   | "edit_event"
   | "edit_event_field"
-  | "event_waiting_for_calendar";
+  | "event_waiting_for_calendar"
+  | "calendar_join";
 
 export type PendingAction = {
   id: string;
@@ -171,6 +172,31 @@ export async function upsertEditEventFieldAction(userId: string, payload: unknow
   return rows[0];
 }
 
+export async function upsertCalendarJoinAction(userId: string, payload: unknown, expiresAt: Date) {
+  const rows = await sql`
+    INSERT INTO pending_actions (
+      user_id,
+      type,
+      payload,
+      expires_at
+    )
+    VALUES (
+      ${userId},
+      'calendar_join',
+      ${JSON.stringify(payload)},
+      ${expiresAt.toISOString()}
+    )
+    ON CONFLICT (user_id, type)
+    DO UPDATE SET
+      payload = EXCLUDED.payload,
+      expires_at = EXCLUDED.expires_at,
+      created_at = NOW()
+    RETURNING id, user_id, type, payload, expires_at, created_at
+  ` as PendingAction[];
+
+  return rows[0];
+}
+
 export async function updateConfirmEventPayload(userId: string, payload: unknown) {
   const rows = await sql`
     UPDATE pending_actions
@@ -233,7 +259,8 @@ export async function findByUserId(userId: string) {
       WHEN 'edit_event' THEN 4
       WHEN 'confirm_event' THEN 5
       WHEN 'event_waiting_for_calendar' THEN 6
-      ELSE 7
+      WHEN 'calendar_join' THEN 7
+      ELSE 8
     END
     LIMIT 1
   ` as PendingAction[];

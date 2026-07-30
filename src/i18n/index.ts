@@ -241,6 +241,31 @@ export const messages = {
   ownerLeaveDenied(language: Language) {
     return t(language).calendar.ownerLeaveDenied;
   },
+  calendarInviteTitle(language: Language, calendarName: string) {
+    return t(language).format("calendar.inviteTitle", { calendarName });
+  },
+  calendarInviteDescription(language: Language) {
+    return t(language).calendar.inviteDescription;
+  },
+  calendarInviteExpiration(language: Language, days: number) {
+    return t(language).format("calendar.inviteExpiration", { days });
+  },
+  calendarJoinPreview(language: Language, input: {
+    calendarName: string;
+    ownerName: string;
+    memberCount: number;
+  }) {
+    return t(language).format("calendar.joinPreview", input);
+  },
+  calendarJoinedSuccessfully(language: Language, calendarName: string) {
+    return t(language).format("calendar.joinedSuccessfully", { calendarName });
+  },
+  alreadyCalendarMember(language: Language, calendarName: string) {
+    return t(language).format("calendar.alreadyMember", { calendarName });
+  },
+  invalidCalendarInvite(language: Language) {
+    return t(language).calendar.invalidInvite;
+  },
   renameOwnerOnly(language: Language) {
     return t(language).calendar.renameOwnerOnly;
   },
@@ -563,6 +588,21 @@ export const messages = {
   },
   confirmLeaveCalendarButton(language: Language) {
     return t(language).buttons.confirmLeaveCalendar;
+  },
+  inviteButton(language: Language) {
+    return t(language).buttons.invite;
+  },
+  shareInviteButton(language: Language) {
+    return t(language).buttons.shareInvite;
+  },
+  regenerateInviteButton(language: Language) {
+    return t(language).buttons.regenerateInvite;
+  },
+  joinCalendarButton(language: Language) {
+    return t(language).buttons.joinCalendar;
+  },
+  openCalendarButton(language: Language) {
+    return t(language).buttons.openCalendar;
   },
   renameButton(language: Language) {
     return t(language).buttons.rename;
