@@ -127,7 +127,7 @@ test("invite share URL contains localized context without duplicating invite lin
   assert.equal(parsed.origin + parsed.pathname, "https://t.me/share/url");
   assert.equal(parsed.searchParams.get("url"), inviteLink);
   assert.doesNotMatch(text, /Dária & Co/);
-  assert.match(text, /Join my Meetory calendar “Hiking & Food\? #1”/);
+  assert.match(text, /Join my calendar “Hiking & Food\? #1”/);
   assert.match(text, /Open the link and tap “Join”/);
   assert.equal(text.includes(inviteLink), false);
 });

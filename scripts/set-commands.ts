@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { Bot } from "grammy";
+import { registerLocalizedBotCommands } from "../src/telegram/botCommands.js";
 
 const token = process.env.TELEGRAM_API_TOKEN;
 
@@ -9,27 +10,6 @@ if (!token) {
 
 const bot = new Bot(token);
 
-await bot.api.setMyCommands([
-  {
-    command: "start",
-    description: "Open Meetory",
-  },
-  {
-    command: "newcalendar",
-    description: "Create a calendar",
-  },
-  {
-    command: "calendars",
-    description: "Show calendars",
-  },
-  {
-    command: "disconnect",
-    description: "Disconnect Google Calendar",
-  },
-  {
-    command: "help",
-    description: "Show help",
-  },
-]);
+await registerLocalizedBotCommands(bot.api);
 
 console.log("Telegram commands set.");

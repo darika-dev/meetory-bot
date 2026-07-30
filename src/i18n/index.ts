@@ -508,7 +508,10 @@ export const messages = {
     return t(language).settings.saved;
   },
   help(language: Language) {
-    return t(language).help;
+    return `${t(language).help.title}\n\n${t(language).help.description}`;
+  },
+  commandDescriptions(language: Language) {
+    return t(language).commands;
   },
   disconnectNotConnected(language: Language) {
     return t(language).disconnect.notConnected;

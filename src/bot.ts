@@ -1728,6 +1728,54 @@ bot?.command("events", async (ctx) => {
   return showEventsMenu(ctx, user);
 });
 
+bot?.command("today", async (ctx) => {
+  const user = await upsertTelegramUser(ctx);
+
+  if (!user) {
+    return ctx.reply("Meetory is running.");
+  }
+
+  await clearRenamePendingAction(user.id);
+
+  return replyEventsForRange(ctx, user, "today");
+});
+
+bot?.command("tomorrow", async (ctx) => {
+  const user = await upsertTelegramUser(ctx);
+
+  if (!user) {
+    return ctx.reply("Meetory is running.");
+  }
+
+  await clearRenamePendingAction(user.id);
+
+  return replyEventsForRange(ctx, user, "tomorrow");
+});
+
+bot?.command("weekend", async (ctx) => {
+  const user = await upsertTelegramUser(ctx);
+
+  if (!user) {
+    return ctx.reply("Meetory is running.");
+  }
+
+  await clearRenamePendingAction(user.id);
+
+  return replyEventsForRange(ctx, user, "weekend");
+});
+
+bot?.command("settings", async (ctx) => {
+  const user = await upsertTelegramUser(ctx);
+
+  if (!user) {
+    return ctx.reply("Meetory is running.");
+  }
+
+  await clearRenamePendingAction(user.id);
+
+  return showSettingsMenu(ctx, user);
+});
+
 bot?.command("help", async (ctx) => {
   const user = await upsertTelegramUser(ctx);
   const language = getLanguage(user?.language);

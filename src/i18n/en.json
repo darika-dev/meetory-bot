@@ -167,7 +167,20 @@
     "cancelled": "Google Calendar disconnect cancelled.",
     "error": "Could not disconnect Google Calendar. Please try again later."
   },
-  "help": "Commands:\n/start - open the main menu\n/newcalendar - create a calendar\n/calendars - show calendars\n/events - show upcoming events\n/disconnect - disconnect Google Calendar\n/help - help\n\nForward an event announcement or send its details as text.\nMeetory will extract the date, time and place and ask where to save it.",
+  "commands": {
+    "start": "Open Meetory",
+    "help": "Help",
+    "calendars": "My calendars",
+    "newCalendar": "Create calendar",
+    "today": "Today's events",
+    "tomorrow": "Tomorrow's events",
+    "weekend": "Weekend events",
+    "settings": "Settings"
+  },
+  "help": {
+    "title": "Meetory helps you save events to your calendars.",
+    "description": "Simply:\n\n• forward an event announcement;\nor\n• describe the event in your own words.\n\nMeetory will recognize it and offer to save it to your calendar."
+  },
   "buttons": {
     "connectGoogle": "🔗 Connect Google",
     "connectGoogleCalendar": "🔗 Connect Google Calendar",
