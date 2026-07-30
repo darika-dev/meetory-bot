@@ -253,6 +253,15 @@ export const messages = {
   calendarInviteExpiration(language: Language, days: number) {
     return t(language).format("calendar.inviteExpiration", { days });
   },
+  calendarInviteShareText(language: Language, input: {
+    inviterName: string;
+    calendarName: string;
+  }) {
+    return t(language).format("calendar.inviteShareText", input);
+  },
+  calendarInviteInviterFallback(language: Language) {
+    return t(language).calendar.inviteInviterFallback;
+  },
   calendarJoinPreview(language: Language, input: {
     calendarName: string;
     ownerName: string;
@@ -570,6 +579,9 @@ export const messages = {
   },
   backButton(language: Language) {
     return t(language).buttons.back;
+  },
+  mainMenuButton(language: Language) {
+    return t(language).buttons.mainMenu;
   },
   enableButton(language: Language) {
     return t(language).buttons.enable;

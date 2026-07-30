@@ -372,6 +372,27 @@ function formatMemberDisplayName(member: usersRepository.User, language: ReturnT
   return messages.calendarMemberFallbackName(language);
 }
 
+function formatInviteSenderName(user: usersRepository.User, language: ReturnType<typeof getLanguage>) {
+  const name = [user.first_name, user.last_name]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join(" ")
+    .trim();
+
+  if (name) {
+    return name;
+  }
+
+  if (user.first_name?.trim()) {
+    return user.first_name.trim();
+  }
+
+  if (user.telegram_username) {
+    return `@${user.telegram_username}`;
+  }
+
+  return messages.calendarInviteInviterFallback(language);
+}
+
 function parseCalendarJoinPayload(payload: unknown) {
   const rawToken = typeof payload === "object" && payload !== null
     ? (payload as { rawToken?: unknown }).rawToken
@@ -501,7 +522,9 @@ async function showCalendarInvite(target: ReplyTarget, user: usersRepository.Use
   }), calendarInviteReplyOptions({
     language,
     calendarId: access.calendar.id,
+    calendarName: checked.metadata.summary,
     inviteLink: created.inviteLink,
+    inviterName: formatInviteSenderName(user, language),
   }));
 }
 

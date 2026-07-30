@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { callbackData } from "../src/i18n/index.js";
 import {
   buildCalendarInviteLink,
   parseCalendarJoinStartPayload,
@@ -11,6 +12,7 @@ import {
   isValidCalendarInviteTokenShape,
 } from "../src/calendars/calendarInviteTokens.js";
 import {
+  buildCalendarInviteShareUrl,
   calendarInviteKeyboard,
   calendarInviteRegenerateCallbackData,
   calendarInviteReplyOptions,
@@ -89,20 +91,86 @@ test("invite link and invite screen use bot username and disable link preview", 
   const keyboard = calendarInviteKeyboard({
     language: "en",
     calendarId: "10",
+    calendarName: "Hiking",
     inviteLink: link,
+    inviterName: "Daria",
   }).inline_keyboard;
   const options = calendarInviteReplyOptions({
     language: "en",
     calendarId: "10",
+    calendarName: "Hiking",
     inviteLink: link,
+    inviterName: "Daria",
   });
 
   assert.equal(link, `https://t.me/MeetoryBot?start=join_${token}`);
   assert.match(message, /Invite to calendar/);
   assert.match(message, new RegExp(`join_${token}`));
   assert.deepEqual(options.link_preview_options, { is_disabled: true });
-  assert.match(url(keyboard[0]?.[0]) ?? "", /^https:\/\/t\.me\/share\/url\?url=/);
+  assert.match(url(keyboard[0]?.[0]) ?? "", /^https:\/\/t\.me\/share\/url\?/);
   assert.equal(callback(keyboard[1]?.[0]), calendarInviteRegenerateCallbackData("10"));
+  assert.deepEqual(keyboard[2]?.map((button) => button.text), ["👥 Members", "🏠 Main menu"]);
+  assert.deepEqual(keyboard[2]?.map(callback), ["calendar:members:10", callbackData.mainMenu]);
+});
+
+test("invite share URL contains localized context without duplicating invite link in text", () => {
+  const inviteLink = "https://t.me/MeetoryBot?start=join_abc-123_XYZ";
+  const shareUrl = buildCalendarInviteShareUrl({
+    language: "en",
+    calendarName: "Hiking & Food? #1",
+    inviteLink,
+    inviterName: "Dária & Co",
+  });
+  const parsed = new URL(shareUrl);
+  const text = parsed.searchParams.get("text") ?? "";
+
+  assert.equal(parsed.origin + parsed.pathname, "https://t.me/share/url");
+  assert.equal(parsed.searchParams.get("url"), inviteLink);
+  assert.doesNotMatch(text, /Dária & Co/);
+  assert.match(text, /Join my Meetory calendar “Hiking & Food\? #1”/);
+  assert.match(text, /Open the link and tap “Join”/);
+  assert.equal(text.includes(inviteLink), false);
+});
+
+test("invite share URL supports Russian text, Unicode names, and regenerated links", () => {
+  const oldInviteLink = "https://t.me/MeetoryBot?start=join_old";
+  const newInviteLink = "https://t.me/MeetoryBot?start=join_new";
+  const oldShareUrl = buildCalendarInviteShareUrl({
+    language: "ru",
+    calendarName: "Походы ☀️ & море?",
+    inviteLink: oldInviteLink,
+    inviterName: "Дарья Ю",
+  });
+  const newShareUrl = buildCalendarInviteShareUrl({
+    language: "ru",
+    calendarName: "Походы ☀️ & море?",
+    inviteLink: newInviteLink,
+    inviterName: "Пользователь Meetory",
+  });
+  const oldParsed = new URL(oldShareUrl);
+  const newParsed = new URL(newShareUrl);
+  const newText = newParsed.searchParams.get("text") ?? "";
+
+  assert.equal(oldParsed.searchParams.get("url"), oldInviteLink);
+  assert.equal(newParsed.searchParams.get("url"), newInviteLink);
+  assert.notEqual(oldParsed.searchParams.get("url"), newParsed.searchParams.get("url"));
+  assert.doesNotMatch(newText, /Пользователь Meetory приглашает вас/);
+  assert.match(newText, /Присоединяйтесь к моему календарю «Походы ☀️ & море\?»/);
+  assert.match(newText, /Откройте ссылку и нажмите «Присоединиться»/);
+  assert.equal(newText.includes(newInviteLink), false);
+});
+
+test("Share is a URL button and does not route through callback handling", () => {
+  const keyboard = calendarInviteKeyboard({
+    language: "en",
+    calendarId: "10",
+    calendarName: "Hiking",
+    inviteLink: "https://t.me/MeetoryBot?start=join_token",
+    inviterName: "A Meetory user",
+  }).inline_keyboard;
+
+  assert.match(url(keyboard[0]?.[0]) ?? "", /^https:\/\/t\.me\/share\/url\?/);
+  assert.equal(callback(keyboard[0]?.[0]), null);
 });
 
 test("join preview requires explicit confirmation", () => {

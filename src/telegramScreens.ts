@@ -512,6 +512,24 @@ export function calendarLeaveConfirmKeyboard(language: Language, calendarId: str
     .text(messages.cancelButton(language), calendarMembersCallbackData(calendarId));
 }
 
+function addBottomNavigation(
+  keyboard: InlineKeyboard,
+  input: {
+    language: Language;
+    backText: string;
+    backCallbackData: string;
+    showMainMenu?: boolean;
+  },
+) {
+  keyboard.text(input.backText, input.backCallbackData);
+
+  if (input.showMainMenu) {
+    keyboard.text(messages.mainMenuButton(input.language), callbackData.mainMenu);
+  }
+
+  return keyboard;
+}
+
 export function formatCalendarInviteMessage(input: {
   language: Language;
   calendarName: string;
@@ -531,22 +549,36 @@ export function formatCalendarInviteMessage(input: {
 export function calendarInviteKeyboard(input: {
   language: Language;
   calendarId: string;
+  calendarName: string;
   inviteLink: string;
+  inviterName: string;
 }) {
-  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(input.inviteLink)}`;
-
-  return new InlineKeyboard()
+  const shareUrl = buildCalendarInviteShareUrl({
+    language: input.language,
+    calendarName: input.calendarName,
+    inviteLink: input.inviteLink,
+    inviterName: input.inviterName,
+  });
+  const keyboard = new InlineKeyboard()
     .url(messages.shareInviteButton(input.language), shareUrl)
     .row()
     .text(messages.regenerateInviteButton(input.language), calendarInviteRegenerateCallbackData(input.calendarId))
-    .row()
-    .text(messages.backButton(input.language), calendarMembersCallbackData(input.calendarId));
+    .row();
+
+  return addBottomNavigation(keyboard, {
+    language: input.language,
+    backText: messages.membersButton(input.language),
+    backCallbackData: calendarMembersCallbackData(input.calendarId),
+    showMainMenu: true,
+  });
 }
 
 export function calendarInviteReplyOptions(input: {
   language: Language;
   calendarId: string;
+  calendarName: string;
   inviteLink: string;
+  inviterName: string;
 }) {
   return {
     link_preview_options: {
@@ -554,6 +586,24 @@ export function calendarInviteReplyOptions(input: {
     },
     reply_markup: calendarInviteKeyboard(input),
   };
+}
+
+export function buildCalendarInviteShareUrl(input: {
+  language: Language;
+  calendarName: string;
+  inviteLink: string;
+  inviterName: string;
+}) {
+  const shareText = messages.calendarInviteShareText(input.language, {
+    calendarName: input.calendarName,
+    inviterName: input.inviterName,
+  });
+  const params = new URLSearchParams({
+    url: input.inviteLink,
+    text: shareText,
+  });
+
+  return `https://t.me/share/url?${params.toString()}`;
 }
 
 export function formatCalendarJoinPreview(input: {
