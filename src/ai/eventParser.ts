@@ -1,4 +1,4 @@
-import type { Language } from "../i18n.js";
+import type { Language } from "../i18n/index.js";
 import { getEventParserModel, getOpenAIClient } from "./client.js";
 
 export type ParsedEvent = {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callbackData } from "../src/i18n.js";
+import { callbackData } from "../src/i18n/index.js";
 import { parseEventWaitingForCalendarPayload } from "../src/events/eventWaitingForCalendar.js";
 
 test("Create calendar button uses callback data handled by calendar create callback", () => {

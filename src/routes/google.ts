@@ -7,7 +7,7 @@ import {
   GOOGLE_OAUTH_SCOPES,
 } from "../google/oauth.js";
 import { checkCalendarAvailability, cleanupDeletedCalendar } from "../google/calendarService.js";
-import { getLanguage, messages } from "../i18n.js";
+import { getLanguage, messages } from "../i18n/index.js";
 import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
 import * as usersRepository from "../repositories/users.js";

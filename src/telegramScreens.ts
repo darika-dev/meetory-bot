@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { getAppBaseUrl } from "./config.js";
 import { createOAuthState } from "./security/oauthState.js";
-import { callbackData, messages, type Language } from "./i18n.js";
+import { callbackData, messages, type Language } from "./i18n/index.js";
 
 export type CalendarListItem = {
   id: string;

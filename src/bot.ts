@@ -42,7 +42,7 @@ import {
 } from "./google/calendarService.js";
 import { classifyGoogleApiError } from "./google/googleApiErrors.js";
 import { revokeGoogleConnectionRefreshToken } from "./google/oauth.js";
-import { getLanguage, getTelegramLanguage, messages } from "./i18n.js";
+import { getLanguage, getTelegramLanguage, messages } from "./i18n/index.js";
 import {
   calendarCardKeyboard,
   calendarDeleteConfirmKeyboard,
