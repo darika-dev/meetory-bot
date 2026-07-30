@@ -1465,6 +1465,7 @@ async function showCalendarMembers(target: ReplyTarget, user: usersRepository.Us
       calendarId: access.calendar.id,
       canManage: access.isOwner,
       canLeave: !access.isOwner,
+      members: memberItems,
     }),
   });
 }
@@ -1756,7 +1757,7 @@ bot?.callbackQuery("calendar:create:cancel", async (ctx) => {
 
   await pendingActionsRepository.deleteByUserId(user.id);
 
-  return ctx.reply(messages.creationCancelled(getLanguage(user.language)));
+  return replyCalendarsList(ctx, user, messages.creationCancelled(getLanguage(user.language)));
 });
 
 bot?.callbackQuery("calendar:list", async (ctx) => {

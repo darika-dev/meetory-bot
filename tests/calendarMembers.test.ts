@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { callbackData } from "../src/i18n/index.js";
 import {
@@ -6,6 +7,7 @@ import {
   calendarLeaveCallbackData,
   calendarLeaveConfirmCallbackData,
   calendarLeaveConfirmKeyboard,
+  calendarInviteCallbackData,
   calendarMemberRemoveConfirmCallbackData,
   calendarMemberRemoveConfirmKeyboard,
   calendarMemberRemoveListKeyboard,
@@ -15,6 +17,8 @@ import {
   calendarMembersRemoveCallbackData,
   formatCalendarMembers,
 } from "../src/telegramScreens.js";
+
+const botSource = readFileSync(new URL("../../src/bot.ts", import.meta.url), "utf8");
 
 function callback(button: unknown) {
   return typeof button === "object" &&
@@ -36,14 +40,12 @@ test("calendar card shows members and owner admin actions", () => {
 
   assert.deepEqual(keyboard.map((row) => row.map((button) => button.text)), [
     ["👥 Members"],
-    ["➕ Invite"],
     ["✏️ Rename"],
     ["🗑 Delete"],
     ["← Back"],
   ]);
   assert.deepEqual(keyboard.map((row) => row.map(callback)), [
     [calendarMembersCallbackData("10")],
-    ["calendar:invite:10"],
     ["calendar:rename:10"],
     ["calendar:delete:10"],
     [callbackData.listCalendars],
@@ -64,6 +66,10 @@ test("calendar card hides owner actions and shows leave for regular members", ()
     ["🚪 Выйти из календаря"],
     ["← Назад"],
   ]);
+  const buttonTexts = keyboard.map((row) => row.map((button) => button.text)).flat();
+
+  assert.equal(buttonTexts.includes("✏️ Переименовать"), false);
+  assert.equal(buttonTexts.includes("🗑 Удалить"), false);
   assert.deepEqual(keyboard.map((row) => row.map(callback)), [
     [calendarMembersCallbackData("10")],
     [calendarLeaveCallbackData("10")],
@@ -94,12 +100,16 @@ test("calendar members screen formats owner role without Telegram IDs", () => {
   assert.doesNotMatch(message, /Telegram 123/);
 });
 
-test("owner members keyboard opens remove flow", () => {
+test("owner members keyboard shows invite and remove flow when members exist", () => {
   const keyboard = calendarMembersKeyboard({
     language: "en",
     calendarId: "10",
     canManage: true,
     canLeave: false,
+    members: [
+      { userId: "1", displayName: "Daria", role: "owner" },
+      { userId: "2", displayName: "Maria", role: "member" },
+    ],
   }).inline_keyboard;
 
   assert.deepEqual(keyboard.map((row) => row.map((button) => button.text)), [
@@ -108,8 +118,29 @@ test("owner members keyboard opens remove flow", () => {
     ["← Back"],
   ]);
   assert.deepEqual(keyboard.map((row) => row.map(callback)), [
-    ["calendar:invite:10"],
+    [calendarInviteCallbackData("10")],
     [calendarMembersRemoveCallbackData("10")],
+    ["calendar:open:10"],
+  ]);
+});
+
+test("owner members keyboard hides remove flow when owner is the only member", () => {
+  const keyboard = calendarMembersKeyboard({
+    language: "en",
+    calendarId: "10",
+    canManage: true,
+    canLeave: false,
+    members: [
+      { userId: "1", displayName: "Daria", role: "owner" },
+    ],
+  }).inline_keyboard;
+
+  assert.deepEqual(keyboard.map((row) => row.map((button) => button.text)), [
+    ["➕ Invite"],
+    ["← Back"],
+  ]);
+  assert.deepEqual(keyboard.map((row) => row.map(callback)), [
+    [calendarInviteCallbackData("10")],
     ["calendar:open:10"],
   ]);
 });
@@ -155,6 +186,10 @@ test("regular members screen can leave but has no administrative actions", () =>
     calendarId: "10",
     canManage: false,
     canLeave: true,
+    members: [
+      { userId: "1", displayName: "Daria", role: "owner" },
+      { userId: "2", displayName: "Maria", role: "member" },
+    ],
   }).inline_keyboard;
 
   assert.deepEqual(keyboard.map((row) => row.map((button) => button.text)), [
@@ -165,6 +200,12 @@ test("regular members screen can leave but has no administrative actions", () =>
     [calendarLeaveCallbackData("10")],
     ["calendar:open:10"],
   ]);
+});
+
+test("cancel calendar creation returns to Calendars list", () => {
+  assert.match(botSource, /bot\?\.callbackQuery\("calendar:create:cancel"/);
+  assert.match(botSource, /replyCalendarsList\(ctx, user, messages\.creationCancelled/);
+  assert.doesNotMatch(botSource, /return ctx\.reply\(messages\.creationCancelled/);
 });
 
 test("leave confirmation uses compact callback data", () => {

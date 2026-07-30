@@ -410,7 +410,6 @@ export function calendarCardKeyboard(input: {
   keyboard.text(messages.membersButton(input.language), calendarMembersCallbackData(input.calendarId)).row();
 
   if (input.canManage) {
-    keyboard.text(messages.inviteButton(input.language), calendarInviteCallbackData(input.calendarId)).row();
     keyboard
       .text(messages.renameButton(input.language), calendarCallbackData("rename", input.calendarId))
       .row()
@@ -457,15 +456,17 @@ export function calendarMembersKeyboard(input: {
   calendarId: string;
   canManage: boolean;
   canLeave: boolean;
+  members: CalendarMemberListItem[];
 }) {
   const keyboard = new InlineKeyboard();
+  const hasRemovableMembers = input.members.some((member) => member.role === "member");
 
   if (input.canManage) {
-    keyboard
-      .text(messages.inviteButton(input.language), calendarInviteCallbackData(input.calendarId))
-      .row()
-      .text(messages.removeMemberButton(input.language), calendarMembersRemoveCallbackData(input.calendarId))
-      .row();
+    keyboard.text(messages.inviteButton(input.language), calendarInviteCallbackData(input.calendarId)).row();
+
+    if (hasRemovableMembers) {
+      keyboard.text(messages.removeMemberButton(input.language), calendarMembersRemoveCallbackData(input.calendarId)).row();
+    }
   }
 
   if (input.canLeave) {
