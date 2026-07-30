@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applyTitleFallback,
   buildEventParserSystemPrompt,
+  coerceParsedEventCandidate,
   inferNaturalEventTitle,
   type ParsedEvent,
 } from "../src/ai/eventParser.js";
@@ -57,6 +58,15 @@ test("infers title for open-air cinema wording", () => {
   assert.equal(inferNaturalEventTitle("кинопоказ под открытым небом"), "Кинопоказ");
 });
 
+test("infers title for a short multiline announcement with location and date", () => {
+  const text = [
+    "Метеорный поток Персеиды, Троодос (Агрос/Киперунда)",
+    "12 августа, среда, 20:00",
+  ].join("\n");
+
+  assert.equal(inferNaturalEventTitle(text), "Метеорный поток Персеиды");
+});
+
 test("does not infer title from date-only reminder", () => {
   assert.equal(inferNaturalEventTitle("завтра"), null);
 });
@@ -81,4 +91,29 @@ test("title fallback leaves non-event or unclear parsed result unchanged", () =>
     null,
   );
   assert.equal(applyTitleFallback(parsedWithoutTitle(), "завтра").title, null);
+});
+
+test("coerces a single event wrapper and a single-item events array", () => {
+  const candidate = {
+    isEvent: true,
+    scheduleType: "single",
+    title: "Festival",
+    startDate: "2026-08-01",
+    startTime: "20:00",
+    endDate: null,
+    endTime: null,
+    isAllDay: false,
+    location: null,
+    price: null,
+    description: null,
+    eventUrl: null,
+    locationUrl: null,
+    sourceUrl: null,
+    confidence: 0.9,
+    missingFields: [],
+  };
+
+  assert.deepEqual(coerceParsedEventCandidate({ event: candidate }), candidate);
+  assert.deepEqual(coerceParsedEventCandidate({ events: [candidate] }), candidate);
+  assert.deepEqual(coerceParsedEventCandidate([candidate]), candidate);
 });

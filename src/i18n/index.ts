@@ -323,6 +323,9 @@ export const messages = {
   eventParseTemporaryError(language: Language) {
     return t(language).event.parseTemporaryError;
   },
+  eventSaveTemporaryError(language: Language) {
+    return t(language).event.saveTemporaryError;
+  },
   eventParserNotConfigured(language: Language) {
     return t(language).event.parserNotConfigured;
   },

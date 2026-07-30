@@ -11,7 +11,12 @@ import {
 import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
 import { decryptToken } from "../security/tokenEncryption.js";
-import { addCalendarDays, addMinutesToLocalTime, buildLocalDateTime } from "./localDateTime.js";
+import {
+  addCalendarDays,
+  addMinutesToLocalTime,
+  buildLocalDateTime,
+  normalizeTimedEventEndDate,
+} from "./localDateTime.js";
 import { appendMeetorySignature } from "./meetorySignature.js";
 
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
@@ -19,6 +24,7 @@ const MAX_DAILY_RANGE_DAYS = 31;
 export const MEETORY_END_TIME_PROPERTY = "meetoryEndTime";
 export const MEETORY_END_TIME_EXPLICIT = "explicit";
 export const MEETORY_END_TIME_ESTIMATED = "estimated";
+export const INVALID_TIMED_EVENT_DATE_RANGE_ERROR = "invalid_timed_event_date_range";
 
 export type CreatedGoogleCalendar = {
   googleCalendarId: string;
@@ -48,6 +54,7 @@ export type CalendarAvailability =
 
 export type GoogleEventDraft = {
   eventTraceId?: string;
+  draftId?: string;
   scheduleType: "single" | "daily_range" | "all_day_range";
   title: string;
   startDate: string;
@@ -151,6 +158,63 @@ function compareIsoDates(left: string, right: string) {
   return left.localeCompare(right);
 }
 
+function getGoogleErrorStatusForLog(error: unknown) {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    status?: unknown;
+    response?: {
+      status?: unknown;
+    };
+  };
+  const status = candidate.response?.status ?? candidate.status ?? candidate.code;
+
+  return typeof status === "number" ? status : null;
+}
+
+function getGoogleErrorReasonForLog(error: unknown) {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+
+  const candidate = error as {
+    errors?: Array<{ reason?: unknown }>;
+    response?: {
+      data?: {
+        error?: string | {
+          errors?: Array<{ reason?: unknown }>;
+          status?: unknown;
+        };
+      };
+    };
+  };
+
+  const reasons = [
+    ...(candidate.errors ?? []),
+    ...(
+      typeof candidate.response?.data?.error === "object"
+        ? candidate.response.data.error.errors ?? []
+        : []
+    ),
+  ]
+    .map((item) => item.reason)
+    .filter((reason): reason is string => typeof reason === "string");
+  const responseError = candidate.response?.data?.error;
+
+  if (typeof responseError === "string") {
+    reasons.push(responseError);
+  }
+
+  if (typeof responseError === "object" && typeof responseError.status === "string") {
+    reasons.push(responseError.status);
+  }
+
+  return reasons.length > 0 ? reasons.map((reason) => reason.toLowerCase()).join(",") : null;
+}
+
 export function buildGoogleTimedEventDateRange(input: {
   startDate: string;
   startTime: string;
@@ -158,13 +222,20 @@ export function buildGoogleTimedEventDateRange(input: {
   endTime: string;
   timeZone: string;
 }) {
+  const startDateTime = buildLocalDateTime(input.startDate, input.startTime);
+  const endDateTime = buildLocalDateTime(input.endDate, input.endTime);
+
+  if (endDateTime <= startDateTime) {
+    throw new Error(INVALID_TIMED_EVENT_DATE_RANGE_ERROR);
+  }
+
   return {
     start: {
-      dateTime: buildLocalDateTime(input.startDate, input.startTime),
+      dateTime: startDateTime,
       timeZone: input.timeZone,
     },
     end: {
-      dateTime: buildLocalDateTime(input.endDate, input.endTime),
+      dateTime: endDateTime,
       timeZone: input.timeZone,
     },
   };
@@ -234,8 +305,12 @@ function resolveSingleTimedEventEnd(input: GoogleEventDraft) {
   }
 
   if (input.endTime) {
-    const endDate = input.endDate
-      ?? (input.endTime <= input.startTime ? addCalendarDays(input.startDate, 1) : input.startDate);
+    const endDate = normalizeTimedEventEndDate({
+      startDate: input.startDate,
+      startTime: input.startTime,
+      endDate: input.endDate,
+      endTime: input.endTime,
+    }).endDate;
 
     return {
       endDate,
@@ -268,7 +343,7 @@ export function buildSingleEventRequestBody(input: GoogleEventDraft, timeZone: s
   const dateRange = buildGoogleTimedEventDateRange({
     startDate: input.startDate,
     startTime: input.startTime,
-    endDate: end.endDate,
+    endDate: end.endDate ?? input.startDate,
     endTime: end.endTime,
     timeZone,
   });
@@ -608,10 +683,11 @@ export async function createGoogleCalendarEvent(input: {
     fallbackWasUsed: resolvedTimeZone.fallbackWasUsed,
   });
 
-  const requestBodies = buildGoogleEventRequestBodies(input.draft, timeZone);
   const createdEvents: CreatedGoogleEvent[] = [];
 
   try {
+    const requestBodies = buildGoogleEventRequestBodies(input.draft, timeZone);
+
     for (const requestBody of requestBodies) {
       logGoogleEventRequest({
         draft: input.draft,
@@ -657,6 +733,21 @@ export async function createGoogleCalendarEvent(input: {
       });
     }
   } catch (error) {
+    console.error("[event-time:google-create-failed]", {
+      operation: "create_event",
+      calendarId: calendarRecord.id,
+      googleCalendarId: calendarRecord.google_calendar_id,
+      draftId: input.draft.draftId ?? null,
+      startDate: input.draft.startDate,
+      startTime: input.draft.startTime,
+      endDate: input.draft.endDate,
+      endTime: input.draft.endTime,
+      timezone: timeZone,
+      googleStatus: classifyGoogleApiError(error),
+      googleErrorCode: getGoogleErrorStatusForLog(error),
+      googleErrorReason: getGoogleErrorReasonForLog(error),
+    });
+
     let rollbackFailed = false;
 
     for (const createdEvent of createdEvents) {

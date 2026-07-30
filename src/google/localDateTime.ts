@@ -60,3 +60,31 @@ export function addMinutesToLocalTime(date: string, time: string, minutesToAdd: 
     endTime: `${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`,
   };
 }
+
+export function normalizeTimedEventEndDate(input: {
+  startDate: string;
+  startTime: string;
+  endDate: string | null;
+  endTime: string | null;
+}) {
+  if (!input.endTime) {
+    return {
+      endDate: input.endDate,
+      endTime: input.endTime,
+    };
+  }
+
+  if (input.endDate) {
+    return {
+      endDate: input.endDate,
+      endTime: input.endTime,
+    };
+  }
+
+  return {
+    endDate: input.endTime <= input.startTime
+      ? addCalendarDays(input.startDate, 1)
+      : input.startDate,
+    endTime: input.endTime,
+  };
+}

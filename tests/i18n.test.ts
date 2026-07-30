@@ -12,6 +12,33 @@ test("returns Russian dictionary strings", () => {
   assert.equal(messages.eventDraftTitle("ru"), "Я нашёл мероприятие:");
 });
 
+test("parsing errors use localized user-facing messages", () => {
+  assert.equal(
+    messages.eventParseTemporaryError("en"),
+    "I couldn’t process this event. Please try again a little later.",
+  );
+  assert.equal(
+    messages.eventParseTemporaryError("ru"),
+    "Не удалось обработать событие. Попробуйте ещё раз чуть позже.",
+  );
+  assert.equal(
+    messages.eventSaveTemporaryError("en"),
+    "Could not save the event. Please try again later.",
+  );
+  assert.equal(
+    messages.eventSaveTemporaryError("ru"),
+    "Не удалось сохранить событие. Попробуйте ещё раз позже.",
+  );
+  assert.equal(
+    messages.eventMissingDate("en"),
+    "I couldn’t find the event date or time. Add them and send the message again.",
+  );
+  assert.equal(
+    messages.eventMissingDate("ru"),
+    "Не удалось найти дату или время события. Добавьте их и отправьте сообщение ещё раз.",
+  );
+});
+
 test("formats variables without eval", () => {
   assert.equal(
     t("en").format("calendar.created", {

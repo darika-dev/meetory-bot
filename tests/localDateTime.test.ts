@@ -7,7 +7,11 @@ import {
   MEETORY_END_TIME_PROPERTY,
   type GoogleEventDraft,
 } from "../src/google/calendarService.js";
-import { addMinutesToLocalTime, buildLocalDateTime } from "../src/google/localDateTime.js";
+import {
+  addMinutesToLocalTime,
+  buildLocalDateTime,
+  normalizeTimedEventEndDate,
+} from "../src/google/localDateTime.js";
 import { buildConfirmEventPayload, parseConfirmEventPayload } from "../src/events/eventDraft.js";
 import type { ParsedEvent } from "../src/ai/eventParser.js";
 
@@ -127,6 +131,58 @@ test("single cross-midnight request body moves end to next local date", () => {
 
   assert.equal(getDateTime(requestBody.start), "2026-08-01T20:00:00");
   assert.equal(getDateTime(requestBody.end), "2026-08-02T02:00:00");
+});
+
+test("normalizeTimedEventEndDate moves midnight-crossing events to the next day", () => {
+  assert.deepEqual(normalizeTimedEventEndDate({
+    startDate: "2026-08-12",
+    startTime: "20:00",
+    endDate: null,
+    endTime: "00:00",
+  }), {
+    endDate: "2026-08-13",
+    endTime: "00:00",
+  });
+
+  assert.deepEqual(normalizeTimedEventEndDate({
+    startDate: "2026-08-12",
+    startTime: "23:30",
+    endDate: null,
+    endTime: "01:00",
+  }), {
+    endDate: "2026-08-13",
+    endTime: "01:00",
+  });
+});
+
+test("buildConfirmEventPayload normalizes midnight-crossing end dates", () => {
+  const payload = buildConfirmEventPayload({
+    ...parsedEvent(),
+    endDate: null,
+    endTime: "00:00",
+  }, "42", "00000000-0000-4000-8000-000000000001");
+
+  assert.equal(payload.endDate, "2026-08-02");
+  assert.equal(payload.endTime, "00:00");
+
+  const [requestBody] = buildGoogleEventRequestBodies(payload, "Europe/Nicosia");
+
+  const startDateTime = getDateTime(requestBody.start);
+  const endDateTime = getDateTime(requestBody.end);
+
+  assert.equal(endDateTime, "2026-08-02T00:00:00");
+  assert.ok(startDateTime && endDateTime && endDateTime > startDateTime);
+});
+
+test("explicit end date is preserved", () => {
+  const payload = buildConfirmEventPayload({
+    ...parsedEvent(),
+    endDate: "2026-08-01",
+    endTime: "00:00",
+  }, "42", "00000000-0000-4000-8000-000000000002");
+
+  assert.equal(payload.endDate, "2026-08-01");
+  assert.equal(payload.endTime, "00:00");
 });
 
 test("single missing end time uses default duration locally", () => {

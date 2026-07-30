@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { Bot, type Context } from "grammy";
-import { parseEvent, type DetectedLink, type ParsedEvent } from "./ai/eventParser.js";
+import { parseEvent, EventParseError, type DetectedLink, type ParsedEvent } from "./ai/eventParser.js";
 import { applyLinkFallback, getUrlHostForLog } from "./ai/eventLinkFallback.js";
 import { classifyOpenAIError } from "./ai/openaiErrors.js";
 import {
@@ -1240,6 +1240,7 @@ async function parseMessageAsEvent(
         timeZone: eventCalendars.selected.timeZone,
         forwardContext,
         detectedLinks,
+        traceId: eventTraceId,
       });
       parsed = applyLinkFallback(parsed, detectedLinks);
 
@@ -1271,12 +1272,40 @@ async function parseMessageAsEvent(
         sourceUrlHost: getUrlHostForLog(parsed.sourceUrl),
       });
     } catch (error) {
+      if (error instanceof EventParseError) {
+        console.error("[event-parser:failure]", {
+          traceId: eventTraceId,
+          category: error.category,
+          stage: error.stage,
+          issues: error.issues,
+          providerRequestId: error.providerRequestId,
+          textLength: text.length,
+          lineCount: text.split(/\r?\n/).length,
+          linkCount: detectedLinks.length,
+        });
+
+        if (error.category === "invalid_model_output") {
+          return editProcessingMessage(ctx, processingMessage, messages.eventParseTemporaryError(language));
+        }
+
+        if (error.category === "unsupported_or_missing_event_data") {
+          if (error.issues.includes("title")) {
+            return editProcessingMessage(ctx, processingMessage, messages.eventMissingTitle(language));
+          }
+
+          if (error.issues.includes("startDate") || error.issues.includes("startTime")) {
+            return editProcessingMessage(ctx, processingMessage, messages.eventMissingDate(language));
+          }
+        }
+      }
+
       const errorKind = classifyOpenAIError(error);
 
       console.error("OpenAI event parsing failed:", {
         operation: "parse_event",
         userId: user.id,
         provider: "openai",
+        category: "provider_error",
         errorKind,
         errorName: error instanceof Error ? error.name : typeof error,
         errorMessage: error instanceof Error ? error.message : String(error),
@@ -1384,6 +1413,7 @@ async function replyCalendarProblem(
   user: usersRepository.User,
   status: string,
   calendar?: calendarsRepository.Calendar,
+  fallbackMessage?: string,
 ) {
   const language = getLanguage(user.language);
 
@@ -1419,7 +1449,7 @@ async function replyCalendarProblem(
     return target.reply(messages.primaryCalendarDeleteDenied(language));
   }
 
-  return target.reply(messages.genericCreateError(language));
+  return target.reply(fallbackMessage ?? messages.genericCreateError(language));
 }
 
 async function openCalendarCard(target: ReplyTarget, user: usersRepository.User, calendarId: string) {
@@ -2986,7 +3016,7 @@ bot?.callbackQuery(/^event:save:/, async (ctx) => {
 
     const calendar = await calendarsRepository.findById(draft.calendarId);
 
-    return replyCalendarProblem(ctx, user, kind, calendar ?? undefined);
+    return replyCalendarProblem(ctx, user, kind, calendar ?? undefined, messages.eventSaveTemporaryError(language));
   }
 });
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import type { ParsedEvent } from "../ai/eventParser.js";
+import { normalizeTimedEventEndDate } from "../google/localDateTime.js";
 
 export const CONFIRM_EVENT_PAYLOAD_VERSION = 2;
 
@@ -107,6 +108,18 @@ export function buildConfirmEventPayload(
     updateId: null,
   },
 ): ConfirmEventPayload {
+  const normalizedEnd = parsed.startDate && parsed.startTime
+    ? normalizeTimedEventEndDate({
+        startDate: parsed.startDate,
+        startTime: parsed.startTime,
+        endDate: parsed.endDate,
+        endTime: parsed.endTime,
+      })
+    : {
+        endDate: parsed.endDate,
+        endTime: parsed.endTime,
+      };
+
   return {
     payloadVersion: CONFIRM_EVENT_PAYLOAD_VERSION,
     eventTraceId,
@@ -116,8 +129,8 @@ export function buildConfirmEventPayload(
     title: parsed.title ?? "",
     startDate: parsed.startDate ?? "",
     startTime: parsed.startTime,
-    endDate: parsed.endDate,
-    endTime: parsed.endTime,
+    endDate: normalizedEnd.endDate,
+    endTime: normalizedEnd.endTime,
     isAllDay: parsed.isAllDay || !parsed.startTime,
     location: parsed.location,
     price: parsed.price,

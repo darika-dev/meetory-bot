@@ -33,7 +33,49 @@ export type ParseEventInput = {
   currentLocalTime: string;
   timeZone: string;
   forwardContext?: string | null;
+  traceId?: string | null;
 };
+
+export type EventParseFailureCategory =
+  | "provider_error"
+  | "invalid_model_output"
+  | "unsupported_or_missing_event_data"
+  | "internal_error";
+
+export type EventParseStage =
+  | "prepare"
+  | "request"
+  | "response"
+  | "json_parse"
+  | "normalize"
+  | "title_fallback"
+  | "repair";
+
+export class EventParseError extends Error {
+  readonly category: EventParseFailureCategory;
+  readonly stage: EventParseStage;
+  readonly issues: string[];
+  readonly providerRequestId: string | null;
+
+  constructor(input: {
+    message: string;
+    category: EventParseFailureCategory;
+    stage: EventParseStage;
+    issues?: string[];
+    providerRequestId?: string | null;
+    cause?: unknown;
+  }) {
+    super(input.message);
+    this.name = "EventParseError";
+    this.category = input.category;
+    this.stage = input.stage;
+    this.issues = input.issues ?? [];
+    this.providerRequestId = input.providerRequestId ?? null;
+    if (input.cause !== undefined) {
+      (this as { cause?: unknown }).cause = input.cause;
+    }
+  }
+}
 
 const titleCategoryPatterns = [
   {
@@ -59,6 +101,32 @@ function normalizeTitleTail(value: string) {
     .replace(/\s+/g, " ")
     .replace(/[,:;.]+$/g, "")
     .trim();
+}
+
+function hasDateOrTimeCue(text: string) {
+  return /(\b\d{1,2}:\d{2}\b)|(\b\d{1,2}\s+[A-Za-zА-Яа-яЁё]{3,}\b)|(\b(?:сегодня|завтра|послезавтра|today|tomorrow|tonight|this weekend|weekend)\b)/i.test(text);
+}
+
+function looksLikeNaturalTitle(value: string) {
+  const normalized = normalizeTitleTail(value);
+
+  if (!normalized || normalized.length < 3) {
+    return false;
+  }
+
+  if (!/[\p{L}\p{N}]/u.test(normalized)) {
+    return false;
+  }
+
+  if (/^\d/.test(normalized)) {
+    return false;
+  }
+
+  if (/^(?:завтра|сегодня|послезавтра|today|tomorrow|tonight|ок|надо не забыть)$/i.test(normalized)) {
+    return false;
+  }
+
+  return true;
 }
 
 function capitalizeFirst(value: string) {
@@ -88,6 +156,23 @@ export function inferNaturalEventTitle(text: string) {
   const englishMatch = normalizedText.match(/\b(festival|fair|concert|exhibition)\s+([^,\n.]+?)(?=\s+(?:in|at|on|near|by)\s|$|[,.\n])/i);
   if (englishMatch?.[1] && englishMatch[2]) {
     return `${capitalizeFirst(englishMatch[1].toLowerCase())} ${normalizeTitleTail(englishMatch[2])}`;
+  }
+
+  const lines = text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const leadLine = lines[0] ?? null;
+  const hasTemporalCue = hasDateOrTimeCue(lines.join(" ")) || lines.slice(1).some(hasDateOrTimeCue);
+
+  if (leadLine && hasTemporalCue) {
+    const candidate = normalizeTitleTail(leadLine.split(/[,:;—–-]/)[0] ?? "");
+
+    if (looksLikeNaturalTitle(candidate)) {
+      return candidate;
+    }
   }
 
   return null;
@@ -198,6 +283,120 @@ function logEventParserDebug(label: string, value: unknown) {
   console.debug(`[event-parser:debug:${label}]`, value);
 }
 
+function logEventParserStage(input: {
+  stage: EventParseStage;
+  traceId?: string | null;
+  repairAttempted?: boolean;
+  providerRequestId?: string | null;
+  category?: EventParseFailureCategory;
+  issues?: string[];
+  textLength?: number;
+  lineCount?: number;
+  linkCount?: number;
+}) {
+  console.info("[event-parser:stage]", {
+    stage: input.stage,
+    traceId: input.traceId ?? null,
+    repairAttempted: input.repairAttempted ?? false,
+    providerRequestId: input.providerRequestId ?? null,
+    category: input.category ?? null,
+    issues: input.issues ?? [],
+    textLength: input.textLength ?? null,
+    lineCount: input.lineCount ?? null,
+    linkCount: input.linkCount ?? null,
+  });
+}
+
+export function coerceParsedEventCandidate(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.length === 1 ? value[0] : value;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if (candidate.event && typeof candidate.event === "object" && candidate.event !== null) {
+    return candidate.event;
+  }
+
+  if (Array.isArray(candidate.events) && candidate.events.length === 1) {
+    return candidate.events[0];
+  }
+
+  return value;
+}
+
+function getValidationIssues(parsed: ParsedEvent) {
+  const issues: string[] = [];
+
+  if (!parsed.isEvent) {
+    issues.push("isEvent=false");
+  }
+
+  if (!parsed.title) {
+    issues.push("title");
+  }
+
+  if (!parsed.startDate) {
+    issues.push("startDate");
+  }
+
+  if (!parsed.startTime && !parsed.isAllDay) {
+    issues.push("startTime");
+  }
+
+  return issues;
+}
+
+function normalizeParsedEventCandidate(value: unknown, inputText: string) {
+  const candidate = coerceParsedEventCandidate(value);
+
+  if (typeof candidate !== "object" || candidate === null) {
+    throw new EventParseError({
+      message: "OpenAI event parser returned non-object output",
+      category: "invalid_model_output",
+      stage: "json_parse",
+      issues: ["non_object"],
+    });
+  }
+
+  const parsed = applyTitleFallback(validateParsedEvent(candidate), inputText);
+  const issues = getValidationIssues(parsed);
+
+  if (issues.length > 0) {
+    throw new EventParseError({
+      message: "OpenAI event parser returned incomplete event data",
+      category: "unsupported_or_missing_event_data",
+      stage: "normalize",
+      issues,
+    });
+  }
+
+  return parsed;
+}
+
+function buildRepairPrompt(input: ParseEventInput, issueSummary: string) {
+  return [
+    "Return a single JSON object matching the schema.",
+    "Do not wrap the answer in markdown, code fences, or prose.",
+    "Do not invent end time when it is not in the message.",
+    `Repair issues: ${issueSummary}.`,
+    `User language: ${input.language}`,
+    `Current date: ${input.currentDate}`,
+    `Current local time: ${input.currentLocalTime}`,
+    `Timezone: ${input.timeZone}`,
+    input.forwardContext ? `Forward context: ${input.forwardContext}` : null,
+    "",
+    "Message:",
+    input.text,
+    input.detectedLinks && input.detectedLinks.length > 0 ? "\nDetected links:" : null,
+    ...(input.detectedLinks ?? []).map((link) => `- ${link.text} -> ${link.url}`),
+  ].filter((line): line is string => line !== null).join("\n");
+}
+
 function nullableString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -251,35 +450,126 @@ export async function parseEvent(input: ParseEventInput) {
     ...(input.detectedLinks ?? []).map((link) => `- ${link.text} -> ${link.url}`),
   ].filter((line): line is string => line !== null).join("\n");
 
+  logEventParserStage({
+    stage: "prepare",
+    traceId: input.traceId,
+    textLength: input.text.length,
+    lineCount: input.text.split(/\r?\n/).length,
+    linkCount: input.detectedLinks?.length ?? 0,
+  });
   logEventParserDebug("input", userInput);
 
-  const response = await getOpenAIClient().responses.create({
-    model: getEventParserModel(),
-    input: [
-      {
-        role: "system",
-        content: buildEventParserSystemPrompt(),
+  async function requestParse(systemPrompt: string, repairAttempted: boolean) {
+    logEventParserStage({
+      stage: "request",
+      traceId: input.traceId,
+      repairAttempted,
+    });
+
+    return getOpenAIClient().responses.create({
+      model: getEventParserModel(),
+      input: [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
+        {
+          role: "user",
+          content: userInput,
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "meetory_event_parse",
+          strict: true,
+          schema: eventSchema,
+        },
       },
-      {
-        role: "user",
-        content: userInput,
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "meetory_event_parse",
-        strict: true,
-        schema: eventSchema,
-      },
-    },
-  });
+    });
+  }
 
-  logEventParserDebug("raw-response", response.output_text);
+  try {
+    const response = await requestParse(buildEventParserSystemPrompt(), false);
 
-  const parsed = applyTitleFallback(validateParsedEvent(JSON.parse(response.output_text)), input.text);
+    logEventParserStage({
+      stage: "response",
+      traceId: input.traceId,
+      providerRequestId: response.id ?? null,
+    });
+    logEventParserDebug("raw-response", response.output_text);
 
-  logEventParserDebug("validated-result", parsed);
+    try {
+      const parsed = normalizeParsedEventCandidate(JSON.parse(response.output_text), input.text);
 
-  return parsed;
+      logEventParserStage({
+        stage: "normalize",
+        traceId: input.traceId,
+        providerRequestId: response.id ?? null,
+      });
+      logEventParserDebug("validated-result", parsed);
+
+      return parsed;
+    } catch (error) {
+      const issues = error instanceof EventParseError ? error.issues : ["json_parse"];
+      const category = error instanceof EventParseError ? error.category : "invalid_model_output";
+
+      logEventParserStage({
+        stage: "repair",
+        traceId: input.traceId,
+        providerRequestId: response.id ?? null,
+        category,
+        issues,
+        repairAttempted: true,
+      });
+
+      const repairResponse = await requestParse(buildRepairPrompt(input, issues.join(", ")), true);
+
+      logEventParserStage({
+        stage: "response",
+        traceId: input.traceId,
+        providerRequestId: repairResponse.id ?? null,
+        repairAttempted: true,
+      });
+      logEventParserDebug("raw-response-repair", repairResponse.output_text);
+
+      try {
+        const repaired = normalizeParsedEventCandidate(JSON.parse(repairResponse.output_text), input.text);
+
+        logEventParserStage({
+          stage: "normalize",
+          traceId: input.traceId,
+          providerRequestId: repairResponse.id ?? null,
+          repairAttempted: true,
+        });
+        logEventParserDebug("validated-result-repair", repaired);
+
+        return repaired;
+      } catch (repairError) {
+        throw repairError instanceof EventParseError
+          ? repairError
+          : new EventParseError({
+              message: "Event parser repair attempt returned invalid output",
+              category: "invalid_model_output",
+              stage: "repair",
+              issues,
+              providerRequestId: repairResponse.id ?? null,
+              cause: repairError,
+            });
+      }
+    }
+  } catch (error) {
+    if (error instanceof EventParseError) {
+      throw error;
+    }
+
+    throw error instanceof Error
+      ? error
+      : new EventParseError({
+          message: "Unexpected event parser failure",
+          category: "internal_error",
+          stage: "request",
+          cause: error,
+        });
+  }
 }
