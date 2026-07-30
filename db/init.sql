@@ -137,6 +137,33 @@ CREATE TABLE IF NOT EXISTS event_source_claims (
   error_code TEXT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  tomorrow_digest_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  tomorrow_digest_time TEXT NOT NULL DEFAULT '19:00',
+  weekend_digest_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  weekend_digest_weekday SMALLINT NOT NULL DEFAULT 4,
+  weekend_digest_time TEXT NOT NULL DEFAULT '19:00',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT user_settings_weekend_digest_weekday_check
+    CHECK (weekend_digest_weekday BETWEEN 1 AND 7)
+);
+
+ALTER TABLE user_settings
+  DROP CONSTRAINT IF EXISTS user_settings_tomorrow_digest_time_check;
+
+ALTER TABLE user_settings
+  ADD CONSTRAINT user_settings_tomorrow_digest_time_check
+  CHECK (tomorrow_digest_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$');
+
+ALTER TABLE user_settings
+  DROP CONSTRAINT IF EXISTS user_settings_weekend_digest_time_check;
+
+ALTER TABLE user_settings
+  ADD CONSTRAINT user_settings_weekend_digest_time_check
+  CHECK (weekend_digest_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$');
+
 CREATE INDEX IF NOT EXISTS google_connections_user_id_idx
   ON google_connections(user_id);
 
@@ -168,3 +195,6 @@ CREATE INDEX IF NOT EXISTS processed_telegram_updates_expires_at_idx
 
 CREATE INDEX IF NOT EXISTS event_source_claims_user_id_idx
   ON event_source_claims(user_id);
+
+CREATE INDEX IF NOT EXISTS user_settings_updated_at_idx
+  ON user_settings(updated_at);

@@ -1,6 +1,7 @@
 {
   "welcome": "👋 Welcome to Meetory!\n\nMeetory helps you save interesting events to shared calendars.\n\nConnect Google Calendar to get started.",
   "welcomeBack": "Welcome back!\n\nActive calendar:\n📅 {calendarName}",
+  "activeCalendar": "Active calendar:\n📅 {calendarName}",
   "oauth": {
     "accessDeniedBrowser": "Google Calendar connection was cancelled.\n\nYou can close this page and return to Telegram.",
     "accessDeniedTelegram": "Google Calendar wasn't connected.\n\nYou can try again whenever you're ready.",
@@ -106,6 +107,35 @@
     "possiblyStillInProgress": "Possibly still in progress",
     "allDay": "All day"
   },
+  "settings": {
+    "title": "⚙️ Settings",
+    "language": "🌐 Language",
+    "languageEnglish": "English",
+    "languageRussian": "Русский",
+    "tomorrowDigest": "🌤 Tomorrow digest",
+    "weekendDigest": "🎉 Weekend digest",
+    "disabled": "Disabled",
+    "dailyAt": "Daily at {time}",
+    "weekdayAt": "{weekday} at {time}",
+    "timeZone": "Time zone: {timeZone}",
+    "chooseLanguage": "Choose language:",
+    "languageSaved": "✅ Language updated.",
+    "tomorrowTitle": "🌤 Tomorrow digest",
+    "weekendTitle": "🎉 Weekend digest",
+    "chooseTime": "Choose time:",
+    "chooseDay": "Choose day:",
+    "enabled": "Enabled",
+    "saved": "✅ Settings updated.",
+    "weekdays": {
+      "1": "Monday",
+      "2": "Tuesday",
+      "3": "Wednesday",
+      "4": "Thursday",
+      "5": "Friday",
+      "6": "Saturday",
+      "7": "Sunday"
+    }
+  },
   "disconnect": {
     "notConnected": "Google Calendar is not connected.",
     "confirmBase": "Disconnect Google Calendar?\n\nMeetory will revoke access to your Google Calendar and remove the saved authorization.",
@@ -126,12 +156,15 @@
     "joinViaInvite": "🔗 Join via invite link",
     "calendars": "📅 Calendars",
     "events": "📋 Events",
+    "settings": "⚙️ Settings",
     "today": "Today",
     "tomorrow": "Tomorrow",
     "thisWeekend": "This weekend",
     "next7Days": "Next 7 days",
     "cancel": "✖️ Cancel",
     "back": "← Back",
+    "enable": "Enable",
+    "disable": "Disable",
     "makeActive": "⭐ Make active",
     "rename": "✏️ Rename",
     "delete": "🗑 Delete",
@@ -142,7 +175,7 @@
     "editLocation": "📍 Location",
     "editPrice": "💰 Price",
     "editDescription": "📄 Description",
-    "openGoogleCalendar": "📅 Open in Calendar",
+    "openGoogleCalendar": "Open in Calendar",
     "cancelEditing": "✖️ Cancel editing",
     "disconnectConfirm": "Disconnect Google"
   }

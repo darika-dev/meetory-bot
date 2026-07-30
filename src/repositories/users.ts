@@ -62,7 +62,7 @@ export async function upsertTelegramUser(input: UserProfileInput) {
       telegram_username = EXCLUDED.telegram_username,
       first_name = EXCLUDED.first_name,
       last_name = EXCLUDED.last_name,
-      language = EXCLUDED.language
+      language = COALESCE(users.language, EXCLUDED.language)
     RETURNING id, telegram_id, telegram_username, first_name, last_name, language, active_calendar_id, created_at
   ` as User[];
 
@@ -92,6 +92,17 @@ export async function setActiveCalendar(userId: string, calendarId: string) {
   const rows = await sql`
     UPDATE users
     SET active_calendar_id = ${calendarId}
+    WHERE id = ${userId}
+    RETURNING id, telegram_id, telegram_username, first_name, last_name, language, active_calendar_id, created_at
+  ` as User[];
+
+  return rows[0] ?? null;
+}
+
+export async function setLanguage(userId: string, language: string) {
+  const rows = await sql`
+    UPDATE users
+    SET language = ${language}
     WHERE id = ${userId}
     RETURNING id, telegram_id, telegram_username, first_name, last_name, language, active_calendar_id, created_at
   ` as User[];

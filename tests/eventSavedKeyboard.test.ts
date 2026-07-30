@@ -21,13 +21,13 @@ function url(button: unknown) {
     : null;
 }
 
-test("event saved keyboard offers Calendar, Calendars, and Events actions", () => {
+test("event saved keyboard offers Calendar, Calendars, Events, and Settings actions", () => {
   const htmlLink = "https://calendar.google.com/calendar/event?eid=event-1";
   const keyboard = eventSavedKeyboard({ language: "en", htmlLink }).inline_keyboard;
 
-  assert.equal(keyboard.length, 2);
+  assert.equal(keyboard.length, 3);
   assert.equal(keyboard[0]?.length, 1);
-  assert.equal(keyboard[0]?.[0]?.text, "📅 Open in Calendar");
+  assert.equal(keyboard[0]?.[0]?.text, "Open in Calendar");
   assert.equal(url(keyboard[0]?.[0]), htmlLink);
 
   assert.equal(keyboard[1]?.length, 2);
@@ -35,15 +35,23 @@ test("event saved keyboard offers Calendar, Calendars, and Events actions", () =
   assert.equal(callback(keyboard[1]?.[0]), callbackData.listCalendars);
   assert.equal(keyboard[1]?.[1]?.text, "📋 Events");
   assert.equal(callback(keyboard[1]?.[1]), callbackData.eventsMenu);
+
+  assert.equal(keyboard[2]?.length, 1);
+  assert.equal(keyboard[2]?.[0]?.text, "⚙️ Settings");
+  assert.equal(callback(keyboard[2]?.[0]), callbackData.settingsMenu);
 });
 
 test("event saved keyboard reuses Events callback without Google event link", () => {
   const keyboard = eventSavedKeyboard({ language: "ru" }).inline_keyboard;
 
-  assert.equal(keyboard.length, 1);
+  assert.equal(keyboard.length, 2);
   assert.equal(keyboard[0]?.length, 2);
   assert.equal(keyboard[0]?.[0]?.text, "📅 Календари");
   assert.equal(callback(keyboard[0]?.[0]), callbackData.listCalendars);
   assert.equal(keyboard[0]?.[1]?.text, "📋 События");
   assert.equal(callback(keyboard[0]?.[1]), callbackData.eventsMenu);
+
+  assert.equal(keyboard[1]?.length, 1);
+  assert.equal(keyboard[1]?.[0]?.text, "⚙️ Настройки");
+  assert.equal(callback(keyboard[1]?.[0]), callbackData.settingsMenu);
 });

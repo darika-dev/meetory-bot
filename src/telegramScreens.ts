@@ -8,6 +8,8 @@ export type CalendarListItem = {
   summary: string;
 };
 
+export type MainMenuMode = "welcome" | "navigation";
+
 export function calendarCallbackData(action: "open" | "activate" | "rename" | "delete", calendarId: string) {
   return `calendar:${action}:${calendarId}`;
 }
@@ -52,7 +54,9 @@ export function emptyCalendarsKeyboard(language: Language) {
 export function mainCalendarKeyboard(language: Language) {
   return addCalendarsEventsRow(new InlineKeyboard(), language)
     .row()
-    .text(messages.newCalendarButton(language), callbackData.createCalendar);
+    .text(messages.newCalendarButton(language), callbackData.createCalendar)
+    .row()
+    .text(messages.settingsButton(language), callbackData.settingsMenu);
 }
 
 function addCalendarsEventsRow(keyboard: InlineKeyboard, language: Language) {
@@ -61,8 +65,214 @@ function addCalendarsEventsRow(keyboard: InlineKeyboard, language: Language) {
     .text(messages.eventsButton(language), callbackData.eventsMenu);
 }
 
+export function formatMainMenuMessage(input: {
+  language: Language;
+  calendarName: string;
+  mode: MainMenuMode;
+  notices?: string[];
+}) {
+  const body = input.mode === "welcome"
+    ? messages.welcomeBack(input.language, input.calendarName)
+    : messages.activeCalendar(input.language, input.calendarName);
+  const notices = input.notices ?? [];
+
+  return [
+    ...notices,
+    notices.length > 0 ? "" : null,
+    body,
+  ].filter((line): line is string => line !== null).join("\n");
+}
+
 export function eventsMenuKeyboard(language: Language) {
   return addEventsMenuRows(new InlineKeyboard(), language);
+}
+
+export function settingsTimeCallbackData(kind: "tomorrow" | "weekend", time: string) {
+  return `settings:digest:${kind}:time:${time}`;
+}
+
+export function settingsWeekendDayCallbackData(weekday: number) {
+  return `settings:digest:weekend:day:${weekday}`;
+}
+
+export function buildTimeKeyboardRows(input: {
+  kind: "tomorrow" | "weekend";
+  options: string[];
+  selectedTime: string;
+}) {
+  const buttons = input.options.map((time) => ({
+    text: `${input.selectedTime === time ? "✅ " : ""}${time}`,
+    callbackData: settingsTimeCallbackData(input.kind, time),
+  }));
+
+  const rows: Array<typeof buttons> = [];
+
+  for (let index = 0; index < buttons.length; index += 2) {
+    rows.push(buttons.slice(index, index + 2));
+  }
+
+  return rows;
+}
+
+function addTimeKeyboardRows(
+  keyboard: InlineKeyboard,
+  input: {
+    kind: "tomorrow" | "weekend";
+    options: string[];
+    selectedTime: string;
+  },
+) {
+  for (const row of buildTimeKeyboardRows(input)) {
+    for (const button of row) {
+      keyboard.text(button.text, button.callbackData);
+    }
+
+    keyboard.row();
+  }
+
+  return keyboard;
+}
+
+export function formatSettingsMessage(input: {
+  language: Language;
+  selectedLanguage: Language;
+  tomorrowDigestEnabled: boolean;
+  tomorrowDigestTime: string;
+  weekendDigestEnabled: boolean;
+  weekendDigestWeekday: number;
+  weekendDigestTime: string;
+  timeZone: string;
+}) {
+  const tomorrow = input.tomorrowDigestEnabled
+    ? messages.settingsDailyAt(input.language, input.tomorrowDigestTime)
+    : messages.settingsDisabled(input.language);
+  const weekend = input.weekendDigestEnabled
+    ? messages.settingsWeekdayAt(input.language, input.weekendDigestWeekday, input.weekendDigestTime)
+    : messages.settingsDisabled(input.language);
+
+  return [
+    messages.settingsTitle(input.language),
+    "",
+    messages.settingsLanguageLabel(input.language),
+    messages.settingsLanguageName(input.language, input.selectedLanguage),
+    "",
+    messages.settingsTomorrowDigestLabel(input.language),
+    tomorrow,
+    "",
+    messages.settingsWeekendDigestLabel(input.language),
+    weekend,
+    "",
+    messages.settingsTimeZone(input.language, input.timeZone),
+  ].join("\n");
+}
+
+export function settingsKeyboard(language: Language) {
+  return new InlineKeyboard()
+    .text(messages.settingsLanguageLabel(language), callbackData.settingsLanguage)
+    .row()
+    .text(messages.settingsTomorrowDigestLabel(language), callbackData.settingsTomorrowDigest)
+    .row()
+    .text(messages.settingsWeekendDigestLabel(language), callbackData.settingsWeekendDigest)
+    .row()
+    .text(messages.backButton(language), callbackData.mainMenu);
+}
+
+export function languageSettingsKeyboard(language: Language, selectedLanguage: Language) {
+  const englishPrefix = selectedLanguage === "en" ? "✅ " : "";
+  const russianPrefix = selectedLanguage === "ru" ? "✅ " : "";
+
+  return new InlineKeyboard()
+    .text(`${englishPrefix}${messages.settingsLanguageName(language, "en")}`, callbackData.settingsLanguageEn)
+    .row()
+    .text(`${russianPrefix}${messages.settingsLanguageName(language, "ru")}`, callbackData.settingsLanguageRu)
+    .row()
+    .text(messages.backButton(language), callbackData.settingsMenu);
+}
+
+export function formatTomorrowDigestSettings(input: {
+  language: Language;
+  enabled: boolean;
+  time: string;
+}) {
+  return [
+    messages.settingsTomorrowTitle(input.language),
+    "",
+    input.enabled ? messages.settingsEnabled(input.language) : messages.settingsDisabled(input.language),
+    "",
+    messages.settingsChooseTime(input.language),
+  ].join("\n");
+}
+
+export function tomorrowDigestSettingsKeyboard(input: {
+  language: Language;
+  enabled: boolean;
+  time: string;
+}) {
+  const keyboard = new InlineKeyboard()
+    .text(
+      input.enabled ? messages.disableButton(input.language) : messages.enableButton(input.language),
+      callbackData.settingsTomorrowToggle,
+    )
+    .row();
+
+  addTimeKeyboardRows(keyboard, {
+    kind: "tomorrow",
+    options: ["09:00", "12:00", "19:00", "21:00"],
+    selectedTime: input.time,
+  });
+
+  return keyboard
+    .text(messages.backButton(input.language), callbackData.settingsMenu);
+}
+
+export function formatWeekendDigestSettings(input: {
+  language: Language;
+  enabled: boolean;
+  weekday: number;
+  time: string;
+}) {
+  return [
+    messages.settingsWeekendTitle(input.language),
+    "",
+    input.enabled
+      ? messages.settingsWeekdayAt(input.language, input.weekday, input.time)
+      : messages.settingsDisabled(input.language),
+    "",
+    messages.settingsChooseDay(input.language),
+    messages.settingsChooseTime(input.language),
+  ].join("\n");
+}
+
+export function weekendDigestSettingsKeyboard(input: {
+  language: Language;
+  enabled: boolean;
+  weekday: number;
+  time: string;
+}) {
+  const keyboard = new InlineKeyboard()
+    .text(
+      input.enabled ? messages.disableButton(input.language) : messages.enableButton(input.language),
+      callbackData.settingsWeekendToggle,
+    )
+    .row();
+
+  for (const weekday of [4, 5]) {
+    keyboard.text(
+      `${input.weekday === weekday ? "✅ " : ""}${messages.settingsWeekdayName(input.language, weekday)}`,
+      settingsWeekendDayCallbackData(weekday),
+    );
+  }
+
+  keyboard.row();
+
+  addTimeKeyboardRows(keyboard, {
+    kind: "weekend",
+    options: ["09:00", "12:00", "19:00", "21:00"],
+    selectedTime: input.time,
+  });
+
+  return keyboard
+    .text(messages.backButton(input.language), callbackData.settingsMenu);
 }
 
 export function calendarEventsReplyOptions(input: {
@@ -242,5 +452,7 @@ export function eventSavedKeyboard(input: {
     keyboard.url(messages.openGoogleCalendarButton(input.language), input.htmlLink).row();
   }
 
-  return addCalendarsEventsRow(keyboard, input.language);
+  return addCalendarsEventsRow(keyboard, input.language)
+    .row()
+    .text(messages.settingsButton(input.language), callbackData.settingsMenu);
 }

@@ -4,6 +4,7 @@ import { callbackData } from "../src/i18n/index.js";
 import {
   calendarEventsReplyOptions,
   eventsMenuKeyboard,
+  formatMainMenuMessage,
   mainCalendarKeyboard,
 } from "../src/telegramScreens.js";
 
@@ -31,11 +32,33 @@ test("events menu uses two columns and keeps Back on a separate row", () => {
 test("main menu uses the shared Calendars then Events order", () => {
   const keyboard = mainCalendarKeyboard("en").inline_keyboard;
 
-  assert.equal(keyboard.length, 2);
+  assert.equal(keyboard.length, 3);
   assert.deepEqual(keyboard[0]?.map((button) => button.text), ["📅 Calendars", "📋 Events"]);
   assert.deepEqual(keyboard[0]?.map(callback), [callbackData.listCalendars, callbackData.eventsMenu]);
   assert.deepEqual(keyboard[1]?.map((button) => button.text), ["➕ New calendar"]);
   assert.deepEqual(keyboard[1]?.map(callback), [callbackData.createCalendar]);
+  assert.deepEqual(keyboard[2]?.map((button) => button.text), ["⚙️ Settings"]);
+  assert.deepEqual(keyboard[2]?.map(callback), [callbackData.settingsMenu]);
+});
+
+test("main menu message separates start welcome from internal navigation", () => {
+  assert.equal(
+    formatMainMenuMessage({
+      language: "en",
+      calendarName: "Test Events",
+      mode: "welcome",
+    }),
+    "Welcome back!\n\nActive calendar:\n📅 Test Events",
+  );
+
+  assert.equal(
+    formatMainMenuMessage({
+      language: "ru",
+      calendarName: "Test Events",
+      mode: "navigation",
+    }),
+    "Активный календарь:\n📅 Test Events",
+  );
 });
 
 test("calendar events reply options use HTML and disable link preview", () => {

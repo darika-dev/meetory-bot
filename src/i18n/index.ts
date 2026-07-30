@@ -41,6 +41,14 @@ export const callbackData = {
   eventsTomorrow: "events:tomorrow",
   eventsWeekend: "events:weekend",
   eventsNext7Days: "events:7d",
+  settingsMenu: "settings:menu",
+  settingsLanguage: "settings:language",
+  settingsLanguageEn: "settings:language:en",
+  settingsLanguageRu: "settings:language:ru",
+  settingsTomorrowDigest: "settings:digest:tomorrow",
+  settingsTomorrowToggle: "settings:digest:tomorrow:toggle",
+  settingsWeekendDigest: "settings:digest:weekend",
+  settingsWeekendToggle: "settings:digest:weekend:toggle",
   eventCalendar: "event:calendar",
   eventBack: "event:back",
   eventSave: "event:save",
@@ -132,6 +140,9 @@ export const messages = {
   },
   welcomeBack(language: Language, calendarName: string) {
     return t(language).format("welcomeBack", { calendarName });
+  },
+  activeCalendar(language: Language, calendarName: string) {
+    return t(language).format("activeCalendar", { calendarName });
   },
   createCalendarPrompt(language: Language) {
     return t(language).calendar.createPrompt;
@@ -353,6 +364,69 @@ export const messages = {
   eventListAllDay(language: Language) {
     return t(language).eventList.allDay;
   },
+  settingsTitle(language: Language) {
+    return t(language).settings.title;
+  },
+  settingsLanguageLabel(language: Language) {
+    return t(language).settings.language;
+  },
+  settingsLanguageName(language: Language, selectedLanguage: Language) {
+    return selectedLanguage === "ru"
+      ? t(language).settings.languageRussian
+      : t(language).settings.languageEnglish;
+  },
+  settingsTomorrowDigestLabel(language: Language) {
+    return t(language).settings.tomorrowDigest;
+  },
+  settingsWeekendDigestLabel(language: Language) {
+    return t(language).settings.weekendDigest;
+  },
+  settingsDisabled(language: Language) {
+    return t(language).settings.disabled;
+  },
+  settingsDailyAt(language: Language, time: string) {
+    return t(language).format("settings.dailyAt", { time });
+  },
+  settingsWeekdayAt(language: Language, weekday: number, time: string) {
+    const weekdays = t(language).settings.weekdays;
+
+    return t(language).format("settings.weekdayAt", {
+      time,
+      weekday: weekdays[String(weekday) as keyof typeof weekdays],
+    });
+  },
+  settingsWeekdayName(language: Language, weekday: number) {
+    const weekdays = t(language).settings.weekdays;
+
+    return weekdays[String(weekday) as keyof typeof weekdays];
+  },
+  settingsTimeZone(language: Language, timeZone: string) {
+    return t(language).format("settings.timeZone", { timeZone });
+  },
+  settingsChooseLanguage(language: Language) {
+    return t(language).settings.chooseLanguage;
+  },
+  settingsLanguageSaved(language: Language) {
+    return t(language).settings.languageSaved;
+  },
+  settingsTomorrowTitle(language: Language) {
+    return t(language).settings.tomorrowTitle;
+  },
+  settingsWeekendTitle(language: Language) {
+    return t(language).settings.weekendTitle;
+  },
+  settingsChooseTime(language: Language) {
+    return t(language).settings.chooseTime;
+  },
+  settingsChooseDay(language: Language) {
+    return t(language).settings.chooseDay;
+  },
+  settingsEnabled(language: Language) {
+    return t(language).settings.enabled;
+  },
+  settingsSaved(language: Language) {
+    return t(language).settings.saved;
+  },
   help(language: Language) {
     return t(language).help;
   },
@@ -405,6 +479,9 @@ export const messages = {
   eventsButton(language: Language) {
     return t(language).buttons.events;
   },
+  settingsButton(language: Language) {
+    return t(language).buttons.settings;
+  },
   todayButton(language: Language) {
     return t(language).buttons.today;
   },
@@ -422,6 +499,12 @@ export const messages = {
   },
   backButton(language: Language) {
     return t(language).buttons.back;
+  },
+  enableButton(language: Language) {
+    return t(language).buttons.enable;
+  },
+  disableButton(language: Language) {
+    return t(language).buttons.disable;
   },
   makeActiveButton(language: Language) {
     return t(language).buttons.makeActive;

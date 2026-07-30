@@ -1,6 +1,7 @@
 {
   "welcome": "👋 Добро пожаловать в Meetory!\n\nMeetory помогает сохранять интересные мероприятия в общие календари.\n\nДля начала подключите Google Calendar.",
   "welcomeBack": "С возвращением!\n\nАктивный календарь:\n📅 {calendarName}",
+  "activeCalendar": "Активный календарь:\n📅 {calendarName}",
   "oauth": {
     "accessDeniedBrowser": "Подключение Google Календаря отменено.\n\nВы можете закрыть эту страницу и вернуться в Telegram.",
     "accessDeniedTelegram": "Google Календарь не был подключён.\n\nВы можете попробовать снова, когда будете готовы.",
@@ -106,6 +107,35 @@
     "possiblyStillInProgress": "Возможно, ещё идёт",
     "allDay": "Весь день"
   },
+  "settings": {
+    "title": "⚙️ Настройки",
+    "language": "🌐 Язык",
+    "languageEnglish": "English",
+    "languageRussian": "Русский",
+    "tomorrowDigest": "🌤 Дайджест на завтра",
+    "weekendDigest": "🎉 Дайджест на выходные",
+    "disabled": "Отключён",
+    "dailyAt": "Каждый день в {time}",
+    "weekdayAt": "В {weekday} в {time}",
+    "timeZone": "Часовой пояс: {timeZone}",
+    "chooseLanguage": "Выберите язык:",
+    "languageSaved": "✅ Язык обновлён.",
+    "tomorrowTitle": "🌤 Дайджест на завтра",
+    "weekendTitle": "🎉 Дайджест на выходные",
+    "chooseTime": "Выберите время:",
+    "chooseDay": "Выберите день:",
+    "enabled": "Включён",
+    "saved": "✅ Настройки обновлены.",
+    "weekdays": {
+      "1": "понедельник",
+      "2": "вторник",
+      "3": "среду",
+      "4": "четверг",
+      "5": "пятницу",
+      "6": "субботу",
+      "7": "воскресенье"
+    }
+  },
   "disconnect": {
     "notConnected": "Google Calendar сейчас не подключён.",
     "confirmBase": "Отключить Google Calendar?\n\nMeetory отзовёт доступ к вашему Google Calendar и удалит сохранённую авторизацию.",
@@ -126,12 +156,15 @@
     "joinViaInvite": "🔗 Присоединиться по ссылке",
     "calendars": "📅 Календари",
     "events": "📋 События",
+    "settings": "⚙️ Настройки",
     "today": "Сегодня",
     "tomorrow": "Завтра",
     "thisWeekend": "Выходные",
     "next7Days": "7 дней",
     "cancel": "✖️ Отмена",
     "back": "← Назад",
+    "enable": "Включить",
+    "disable": "Отключить",
     "makeActive": "⭐ Сделать активным",
     "rename": "✏️ Переименовать",
     "delete": "🗑 Удалить",
@@ -142,7 +175,7 @@
     "editLocation": "📍 Место",
     "editPrice": "💰 Цена",
     "editDescription": "📄 Описание",
-    "openGoogleCalendar": "📅 Открыть в календаре",
+    "openGoogleCalendar": "Открыть в календаре",
     "cancelEditing": "✖️ Отменить",
     "disconnectConfirm": "Отключить Google"
   }

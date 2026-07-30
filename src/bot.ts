@@ -37,6 +37,7 @@ import * as calendarMembersRepository from "./repositories/calendarMembers.js";
 import * as googleConnectionsRepository from "./repositories/googleConnections.js";
 import * as pendingActionsRepository from "./repositories/pendingActions.js";
 import * as eventSourceClaimsRepository from "./repositories/eventSourceClaims.js";
+import * as userSettingsRepository from "./repositories/userSettings.js";
 import * as usersRepository from "./repositories/users.js";
 import {
   checkCalendarAvailability,
@@ -68,11 +69,20 @@ import {
   eventEditMenuKeyboard,
   eventsMenuKeyboard,
   eventSavedKeyboard,
+  formatMainMenuMessage,
+  formatSettingsMessage,
+  formatTomorrowDigestSettings,
+  formatWeekendDigestSettings,
   googleDisconnectConfirmKeyboard,
+  languageSettingsKeyboard,
   mainCalendarKeyboard,
   noCalendarsKeyboard,
   reconnectGoogleKeyboard,
   renameCalendarCancelKeyboard,
+  settingsKeyboard,
+  tomorrowDigestSettingsKeyboard,
+  weekendDigestSettingsKeyboard,
+  type MainMenuMode,
 } from "./telegramScreens.js";
 
 const CREATE_CALENDAR_TTL_MS = 15 * 60 * 1000;
@@ -701,6 +711,73 @@ async function handleEventsRange(target: ReplyTarget, user: usersRepository.User
   return replyEventsForRange(target, user, kind);
 }
 
+async function getSettingsTimeZone(userId: string) {
+  return await getGoogleAccountTimeZoneForUser(userId) ?? "UTC";
+}
+
+async function showSettingsMenu(target: ReplyTarget, user: usersRepository.User) {
+  const language = getLanguage(user.language);
+  const settings = await userSettingsRepository.getOrCreate(user.id);
+  const timeZone = await getSettingsTimeZone(user.id);
+
+  return target.reply(formatSettingsMessage({
+    language,
+    selectedLanguage: language,
+    tomorrowDigestEnabled: settings.tomorrow_digest_enabled,
+    tomorrowDigestTime: settings.tomorrow_digest_time,
+    weekendDigestEnabled: settings.weekend_digest_enabled,
+    weekendDigestWeekday: settings.weekend_digest_weekday,
+    weekendDigestTime: settings.weekend_digest_time,
+    timeZone,
+  }), {
+    reply_markup: settingsKeyboard(language),
+  });
+}
+
+async function showLanguageSettings(target: ReplyTarget, user: usersRepository.User) {
+  const language = getLanguage(user.language);
+
+  return target.reply(messages.settingsChooseLanguage(language), {
+    reply_markup: languageSettingsKeyboard(language, language),
+  });
+}
+
+async function showTomorrowDigestSettings(target: ReplyTarget, user: usersRepository.User) {
+  const language = getLanguage(user.language);
+  const settings = await userSettingsRepository.getOrCreate(user.id);
+
+  return target.reply(formatTomorrowDigestSettings({
+    language,
+    enabled: settings.tomorrow_digest_enabled,
+    time: settings.tomorrow_digest_time,
+  }), {
+    reply_markup: tomorrowDigestSettingsKeyboard({
+      language,
+      enabled: settings.tomorrow_digest_enabled,
+      time: settings.tomorrow_digest_time,
+    }),
+  });
+}
+
+async function showWeekendDigestSettings(target: ReplyTarget, user: usersRepository.User) {
+  const language = getLanguage(user.language);
+  const settings = await userSettingsRepository.getOrCreate(user.id);
+
+  return target.reply(formatWeekendDigestSettings({
+    language,
+    enabled: settings.weekend_digest_enabled,
+    weekday: settings.weekend_digest_weekday,
+    time: settings.weekend_digest_time,
+  }), {
+    reply_markup: weekendDigestSettingsKeyboard({
+      language,
+      enabled: settings.weekend_digest_enabled,
+      weekday: settings.weekend_digest_weekday,
+      time: settings.weekend_digest_time,
+    }),
+  });
+}
+
 function formatEventDraftMessage(
   language: ReturnType<typeof getLanguage>,
   draft: ConfirmEventPayload,
@@ -1199,7 +1276,7 @@ async function openCalendarCard(target: ReplyTarget, user: usersRepository.User,
   });
 }
 
-async function showHome(target: ReplyTarget, user: usersRepository.User) {
+async function showHome(target: ReplyTarget, user: usersRepository.User, mode: MainMenuMode = "welcome") {
   const language = getLanguage(user.language);
   const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
 
@@ -1222,11 +1299,12 @@ async function showHome(target: ReplyTarget, user: usersRepository.User) {
   const notices = recoveryMessages(language, resolved);
 
   if (activeCalendar) {
-    return target.reply([
-      ...notices,
-      notices.length > 0 ? "" : null,
-      messages.welcomeBack(language, activeCalendar.summary),
-    ].filter((line): line is string => line !== null).join("\n"), {
+    return target.reply(formatMainMenuMessage({
+      language,
+      calendarName: activeCalendar.summary,
+      mode,
+      notices,
+    }), {
       reply_markup: mainCalendarKeyboard(language),
     });
   }
@@ -1376,7 +1454,7 @@ bot?.command("start", async (ctx) => {
 
   await clearRenamePendingAction(user.id);
 
-  return showHome(ctx, user);
+  return showHome(ctx, user, "welcome");
 });
 
 bot?.command("newcalendar", async (ctx) => {
@@ -1495,7 +1573,7 @@ bot?.callbackQuery("main:menu", async (ctx) => {
 
   await clearRenamePendingAction(user.id);
 
-  return showHome(ctx, user);
+  return showHome(ctx, user, "navigation");
 });
 
 bot?.callbackQuery("events:menu", async (ctx) => {
@@ -1553,6 +1631,176 @@ bot?.callbackQuery("events:7d", async (ctx) => {
   }
 
   return handleEventsRange(ctx, user, "next7days");
+});
+
+bot?.callbackQuery("settings:menu", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  await clearRenamePendingAction(user.id);
+
+  return showSettingsMenu(ctx, user);
+});
+
+bot?.callbackQuery("settings:language", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  return showLanguageSettings(ctx, user);
+});
+
+bot?.callbackQuery(["settings:language:en", "settings:language:ru"], async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = ctx.callbackQuery.data.endsWith(":ru") ? "ru" : "en";
+  const updated = await usersRepository.setLanguage(user.id, language);
+  const nextUser = updated ?? { ...user, language };
+
+  await ctx.reply(messages.settingsLanguageSaved(language));
+
+  return showSettingsMenu(ctx, nextUser);
+});
+
+bot?.callbackQuery("settings:digest:tomorrow", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  return showTomorrowDigestSettings(ctx, user);
+});
+
+bot?.callbackQuery("settings:digest:tomorrow:toggle", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  const settings = await userSettingsRepository.getOrCreate(user.id);
+
+  await userSettingsRepository.updateTomorrowDigest({
+    userId: user.id,
+    enabled: !settings.tomorrow_digest_enabled,
+  });
+
+  await ctx.reply(messages.settingsSaved(getLanguage(user.language)));
+
+  return showSettingsMenu(ctx, user);
+});
+
+bot?.callbackQuery(/^settings:digest:tomorrow:time:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const time = ctx.callbackQuery.data.replace("settings:digest:tomorrow:time:", "");
+
+  await userSettingsRepository.updateTomorrowDigest({
+    userId: user.id,
+    enabled: true,
+    time,
+  });
+
+  await ctx.reply(messages.settingsSaved(getLanguage(user.language)));
+
+  return showSettingsMenu(ctx, user);
+});
+
+bot?.callbackQuery("settings:digest:weekend", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  return showWeekendDigestSettings(ctx, user);
+});
+
+bot?.callbackQuery("settings:digest:weekend:toggle", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user) {
+    return;
+  }
+
+  const settings = await userSettingsRepository.getOrCreate(user.id);
+
+  await userSettingsRepository.updateWeekendDigest({
+    userId: user.id,
+    enabled: !settings.weekend_digest_enabled,
+  });
+
+  await ctx.reply(messages.settingsSaved(getLanguage(user.language)));
+
+  return showSettingsMenu(ctx, user);
+});
+
+bot?.callbackQuery(/^settings:digest:weekend:time:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const time = ctx.callbackQuery.data.replace("settings:digest:weekend:time:", "");
+
+  await userSettingsRepository.updateWeekendDigest({
+    userId: user.id,
+    enabled: true,
+    time,
+  });
+
+  await ctx.reply(messages.settingsSaved(getLanguage(user.language)));
+
+  return showSettingsMenu(ctx, user);
+});
+
+bot?.callbackQuery(/^settings:digest:weekend:day:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const weekday = Number(ctx.callbackQuery.data.replace("settings:digest:weekend:day:", ""));
+
+  if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) {
+    return;
+  }
+
+  await userSettingsRepository.updateWeekendDigest({
+    userId: user.id,
+    enabled: true,
+    weekday,
+  });
+
+  await ctx.reply(messages.settingsSaved(getLanguage(user.language)));
+
+  return showSettingsMenu(ctx, user);
 });
 
 bot?.callbackQuery(/^calendar:open:/, async (ctx) => {
