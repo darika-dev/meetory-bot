@@ -15,6 +15,7 @@ import {
   parseEditEventFieldPayload,
   updateDraftField,
 } from "./events/eventDraftEditing.js";
+import { discardEventDraft } from "./events/eventDraftCancel.js";
 import { parseEventWaitingForCalendarPayload } from "./events/eventWaitingForCalendar.js";
 import {
   extractLinksFromTextEntities,
@@ -745,6 +746,28 @@ async function showUpdatedEventDraft(ctx: Context, user: usersRepository.User, d
     previewChatId: String(message.chat.id),
     previewMessageId: String(message.message_id),
   };
+}
+
+async function discardCurrentEventDraft(ctx: Context, user: usersRepository.User) {
+  const language = getLanguage(user.language);
+  const pendingAction = await pendingActionsRepository.findByUserIdAndType(user.id, "confirm_event");
+  const draft = pendingAction ? parseConfirmEventPayload(pendingAction.payload) : null;
+
+  return discardEventDraft({
+    draft,
+    discardedMessage: messages.eventDraftDiscarded(language),
+    clearDraft: () => pendingActionsRepository.deleteByUserId(user.id),
+    deletePreview: (chatId, messageId) => ctx.api.deleteMessage(chatId, messageId).then(() => undefined),
+    sendMessage: (text) => ctx.reply(text).then(() => undefined),
+    logPreviewDeleteError: (error) => {
+      console.error("Event preview delete failed:", {
+        operation: "discard_event_draft_preview",
+        userId: user.id,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
 }
 
 async function parseMessageAsEvent(
@@ -1765,9 +1788,7 @@ bot?.callbackQuery("event:cancel", async (ctx) => {
     return;
   }
 
-  await pendingActionsRepository.deleteByUserId(user.id);
-
-  return ctx.reply(messages.eventDraftCancelled(getLanguage(user.language)));
+  return discardCurrentEventDraft(ctx, user);
 });
 
 bot?.callbackQuery("event:save", async (ctx) => {

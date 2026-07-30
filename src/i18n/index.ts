@@ -300,6 +300,9 @@ export const messages = {
   eventDraftCancelled(language: Language) {
     return t(language).event.draftCancelled;
   },
+  eventDraftDiscarded(language: Language) {
+    return t(language).event.draftDiscarded;
+  },
   eventAlreadySavedOrExpired(language: Language) {
     return t(language).event.alreadySavedOrExpired;
   },

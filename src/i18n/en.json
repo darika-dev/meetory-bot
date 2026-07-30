@@ -79,6 +79,7 @@
       "description": "Send a new description."
     },
     "draftCancelled": "Event draft cancelled.",
+    "draftDiscarded": "✅ Draft discarded.\n\nForward another event whenever you're ready.",
     "alreadySavedOrExpired": "This event has already been saved or the draft has expired.",
     "draftNoLongerAvailable": "This draft is no longer available.",
     "saved": "✅ Event saved.\n\n🎫 {title}\n📅 {date}\n📅 {calendarName}",
