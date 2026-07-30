@@ -29,6 +29,7 @@
     "deletedInGoogle": "Этот календарь был удалён в Google Calendar, поэтому он удалён из Meetory.",
     "accessLost": "У Meetory больше нет доступа к этому Google Календарю.\n\nПереподключите Google Calendar или восстановите доступ в настройках Google Calendar.",
     "googleConnectionExpired": "Подключение к Google Calendar истекло или было отозвано.\n\nПодключите Google Calendar снова, чтобы продолжить.",
+    "ownerGoogleUnavailable": "Календарь временно недоступен.\n\nВладелец должен повторно подключить Google Calendar.",
     "temporaryUnavailable": "Google Calendar временно недоступен. Попробуйте ещё раз позже.",
     "inaccessibleNotice": "Недоступные календари: {count}.",
     "notFoundOrAccessDenied": "Календарь не найден или доступ запрещён.",
@@ -102,6 +103,7 @@
     "draftDiscarded": "✅ Черновик удалён.\n\nПерешлите другое мероприятие, когда будете готовы.",
     "alreadySavedOrExpired": "Это мероприятие уже сохранено или черновик устарел.",
     "draftNoLongerAvailable": "Этот черновик больше недоступен.",
+    "alreadyAdded": "Это мероприятие уже добавлено в этот календарь.",
     "saved": "✅ Мероприятие сохранено.\n\n🎫 {title}\n📅 {date}\n📅 {calendarName}",
     "dailyRangeSaved": "✅ Сохранено событий: {count}.\n\n🎫 {title}\n📅 {dateRange}\n🕒 {timeRange}\n📅 {calendarName}",
     "batchPartialFailure": "Не удалось сохранить все события. Часть событий могла быть создана в Google Calendar. Проверьте календарь перед повторной попыткой."

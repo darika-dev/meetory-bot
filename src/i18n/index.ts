@@ -183,6 +183,9 @@ export const messages = {
   googleConnectionExpired(language: Language) {
     return t(language).calendar.googleConnectionExpired;
   },
+  ownerGoogleUnavailable(language: Language) {
+    return t(language).calendar.ownerGoogleUnavailable;
+  },
   googleCalendarTemporaryUnavailable(language: Language) {
     return t(language).calendar.temporaryUnavailable;
   },
@@ -389,6 +392,9 @@ export const messages = {
   },
   eventDraftNoLongerAvailable(language: Language) {
     return t(language).event.draftNoLongerAvailable;
+  },
+  eventAlreadyAdded(language: Language) {
+    return t(language).event.alreadyAdded;
   },
   eventSaved(language: Language, title: string, date: string, calendarName: string) {
     return t(language).format("event.saved", { title, date, calendarName });

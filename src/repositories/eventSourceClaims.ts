@@ -3,7 +3,12 @@ import { sql } from "../db/client.js";
 export function buildEventSourceIdempotencyKey(input: {
   chatId: string;
   messageId: string;
+  calendarId?: string;
 }) {
+  if (input.calendarId) {
+    return `calendar:${input.calendarId}:telegram-message:${input.chatId}:${input.messageId}`;
+  }
+
   return `telegram-message:${input.chatId}:${input.messageId}:confirm-event`;
 }
 
@@ -46,5 +51,13 @@ export async function markEventSourceFailed(idempotencyKey: string, errorCode: s
         completed_at = NOW(),
         error_code = ${errorCode}
     WHERE idempotency_key = ${idempotencyKey}
+  `;
+}
+
+export async function releaseEventSourceClaim(idempotencyKey: string) {
+  await sql`
+    DELETE FROM event_source_claims
+    WHERE idempotency_key = ${idempotencyKey}
+      AND status = 'processing'
   `;
 }

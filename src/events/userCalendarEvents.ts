@@ -1,5 +1,6 @@
 import type { Calendar } from "../repositories/calendars.js";
 import type { calendar_v3 } from "googleapis";
+import { CalendarGoogleConnectionUnavailableError } from "../calendars/calendarGoogleConnection.js";
 import * as calendarsRepository from "../repositories/calendars.js";
 import { classifyGoogleApiError, type GoogleApiErrorKind } from "../google/googleApiErrors.js";
 import { getCalendarEvents } from "../google/calendarService.js";
@@ -24,7 +25,7 @@ export type CalendarEventsGroup = {
 
 export type CalendarEventsError = {
   calendar: UserMeetoryCalendar;
-  kind: GoogleApiErrorKind;
+  kind: GoogleApiErrorKind | "owner_google_unavailable";
 };
 
 export type UserCalendarEventsResult = {
@@ -129,7 +130,9 @@ export async function collectUserCalendarEvents(input: CollectUserCalendarEvents
         ? { type: "group" as const, group: { calendar, events } satisfies CalendarEventsGroup }
         : { type: "empty" as const };
     } catch (error) {
-      const kind = classifyGoogleApiError(error);
+      const kind = error instanceof CalendarGoogleConnectionUnavailableError
+        ? "owner_google_unavailable"
+        : classifyGoogleApiError(error);
 
       console.error("Calendar events load failed:", {
         operation: "load_calendar_events",

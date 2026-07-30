@@ -219,6 +219,11 @@ export async function cleanupDeletedCalendarById(id: string) {
       DELETE FROM calendar_members
       WHERE calendar_id = ${id}
       RETURNING calendar_id
+    ),
+    deleted_source_claims AS (
+      DELETE FROM event_source_claims
+      WHERE idempotency_key LIKE ('calendar:' || ${id} || ':%')
+      RETURNING idempotency_key
     )
     DELETE FROM calendars
     WHERE id = ${id}
@@ -240,6 +245,11 @@ export async function deleteCalendarAndChooseFallback(input: {
       DELETE FROM calendar_members
       WHERE calendar_id = ${input.calendarId}
       RETURNING calendar_id
+    ),
+    deleted_source_claims AS (
+      DELETE FROM event_source_claims
+      WHERE idempotency_key LIKE ('calendar:' || ${input.calendarId} || ':%')
+      RETURNING idempotency_key
     ),
     deleted_calendar AS (
       DELETE FROM calendars

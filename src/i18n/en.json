@@ -29,6 +29,7 @@
     "deletedInGoogle": "The calendar was deleted in Google Calendar, so it has been removed from Meetory.",
     "accessLost": "Meetory no longer has access to this Google Calendar.\n\nReconnect Google Calendar or restore access in Google Calendar settings.",
     "googleConnectionExpired": "Your Google Calendar connection has expired or was revoked.\n\nConnect Google Calendar again to continue.",
+    "ownerGoogleUnavailable": "Calendar temporarily unavailable.\n\nThe owner must reconnect Google Calendar.",
     "temporaryUnavailable": "Google Calendar is temporarily unavailable. Please try again later.",
     "inaccessibleNotice": "Unavailable calendars: {count}.",
     "notFoundOrAccessDenied": "Calendar not found or access denied.",
@@ -102,6 +103,7 @@
     "draftDiscarded": "✅ Draft discarded.\n\nForward another event whenever you're ready.",
     "alreadySavedOrExpired": "This event has already been saved or the draft has expired.",
     "draftNoLongerAvailable": "This draft is no longer available.",
+    "alreadyAdded": "This event has already been added to this calendar.",
     "saved": "✅ Event saved.\n\n🎫 {title}\n📅 {date}\n📅 {calendarName}",
     "dailyRangeSaved": "✅ {count} events saved.\n\n🎫 {title}\n📅 {dateRange}\n🕒 {timeRange}\n📅 {calendarName}",
     "batchPartialFailure": "Could not save all events. Some events may have been created in Google Calendar. Check the calendar before trying again."

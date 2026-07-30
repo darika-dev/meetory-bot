@@ -4,6 +4,10 @@ import { classifyGoogleApiError, type GoogleApiErrorKind } from "./googleApiErro
 import type { GoogleConnection } from "../repositories/googleConnections.js";
 import type { Calendar } from "../repositories/calendars.js";
 import { assertCalendarMember } from "../calendars/calendarAccess.js";
+import {
+  CalendarGoogleConnectionUnavailableError,
+  resolveCalendarGoogleConnection,
+} from "../calendars/calendarGoogleConnection.js";
 import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
 import { decryptToken } from "../security/tokenEncryption.js";
@@ -37,7 +41,7 @@ export type CalendarAvailability =
       metadata: GoogleCalendarMetadata;
     }
   | {
-      status: Exclude<GoogleApiErrorKind, "unknown"> | "unknown";
+      status: Exclude<GoogleApiErrorKind, "unknown"> | "unknown" | "owner_google_unavailable";
       calendar: Calendar;
     };
 
@@ -139,15 +143,7 @@ export async function getCalendarMetadata(calendarRecord: Calendar) {
 }
 
 async function getCalendarConnection(calendarRecord: Calendar) {
-  const connection = calendarRecord.google_connection_id
-    ? await googleConnectionsRepository.findById(calendarRecord.google_connection_id)
-    : await googleConnectionsRepository.findByUserId(calendarRecord.created_by_user_id);
-
-  if (!connection) {
-    throw new Error("Google connection not found");
-  }
-
-  return connection;
+  return (await resolveCalendarGoogleConnection(calendarRecord.id)).connection;
 }
 
 function compareIsoDates(left: string, right: string) {
@@ -497,6 +493,13 @@ export async function checkCalendarAvailability(calendarRecord: Calendar): Promi
       metadata: await getCalendarMetadata(calendarRecord),
     };
   } catch (error) {
+    if (error instanceof CalendarGoogleConnectionUnavailableError) {
+      return {
+        status: "owner_google_unavailable",
+        calendar: calendarRecord,
+      };
+    }
+
     return {
       status: classifyGoogleApiError(error),
       calendar: calendarRecord,
@@ -580,9 +583,12 @@ export async function createGoogleCalendarEvent(input: {
   calendarId: string;
   draft: GoogleEventDraft;
 }) {
-  const { calendar: calendarRecord } = await assertCalendarMember(input.calendarId, input.userId);
-
-  const connection = await getCalendarConnection(calendarRecord);
+  await assertCalendarMember(input.calendarId, input.userId);
+  const {
+    calendar: calendarRecord,
+    connection,
+    ownerUserId,
+  } = await resolveCalendarGoogleConnection(input.calendarId);
   const metadata = await getCalendarMetadataByGoogleId({
     connection,
     googleCalendarId: calendarRecord.google_calendar_id,
@@ -619,6 +625,16 @@ export async function createGoogleCalendarEvent(input: {
         calendarId: calendarRecord.google_calendar_id,
         requestBody,
       });
+
+      if (calendarRecord.created_by_user_id !== input.userId) {
+        console.info("[shared-calendar:event-created]", {
+          userId: input.userId,
+          calendarId: calendarRecord.id,
+          ownerUserId,
+          googleCalendarId: calendarRecord.google_calendar_id,
+          traceId: input.draft.eventTraceId ?? null,
+        });
+      }
 
       const createdEvent = response.data.id
         ? await calendar.events.get({
@@ -683,9 +699,11 @@ export async function getCalendarEvents(input: {
   rangeEnd: string;
   timeZone: string;
 }) {
-  const { calendar: calendarRecord } = await assertCalendarMember(input.calendarId, input.userId);
-
-  const connection = await getCalendarConnection(calendarRecord);
+  await assertCalendarMember(input.calendarId, input.userId);
+  const {
+    calendar: calendarRecord,
+    connection,
+  } = await resolveCalendarGoogleConnection(input.calendarId);
   const metadata = await getCalendarMetadataByGoogleId({
     connection,
     googleCalendarId: calendarRecord.google_calendar_id,

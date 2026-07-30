@@ -17,6 +17,7 @@ import {
 } from "./events/eventDraftEditing.js";
 import { discardEventDraft } from "./events/eventDraftCancel.js";
 import { getCalendarAccess, assertCalendarOwner } from "./calendars/calendarAccess.js";
+import { CalendarGoogleConnectionUnavailableError } from "./calendars/calendarGoogleConnection.js";
 import {
   createCalendarInviteLink,
   getInvitePreviewByRawToken,
@@ -40,6 +41,7 @@ import {
   type TelegramTextEntity,
 } from "./telegram/linkExtraction.js";
 import { getBotIdFromToken, shouldIgnoreBotAuthoredMessage } from "./telegram/messageGuards.js";
+import { getTelegramEventSourceIdentity } from "./telegram/eventSourceIdentity.js";
 import * as calendarsRepository from "./repositories/calendars.js";
 import * as calendarMembersRepository from "./repositories/calendarMembers.js";
 import * as googleConnectionsRepository from "./repositories/googleConnections.js";
@@ -160,13 +162,10 @@ type ResolvedEventCalendar = {
 };
 
 function getEventSourceIdentity(ctx: Context): ConfirmEventSourceIdentity {
-  const message = ctx.message;
-
-  return {
-    chatId: message?.chat.id ? String(message.chat.id) : null,
-    messageId: message?.message_id ? String(message.message_id) : null,
-    updateId: ctx.update.update_id ? String(ctx.update.update_id) : null,
-  };
+  return getTelegramEventSourceIdentity({
+    message: ctx.message,
+    updateId: ctx.update.update_id,
+  });
 }
 
 function getRawMessageTextForLog(ctx: Context) {
@@ -269,6 +268,8 @@ async function resolveCalendarsForUser(user: usersRepository.User) {
   const deleted = checkedCalendars.filter((result) => result.status === "calendar_not_found");
   const accessDenied = checkedCalendars.filter((result) => result.status === "calendar_access_denied");
   const oauthInvalid = checkedCalendars.filter((result) => result.status === "oauth_invalid");
+  const ownerGoogleUnavailable = checkedCalendars.filter((result) => result.status === "owner_google_unavailable");
+  const ownedOwnerGoogleUnavailable = ownerGoogleUnavailable.filter((result) => result.calendar.created_by_user_id === user.id);
   const temporaryFailures = checkedCalendars.filter((result) =>
     result.status === "rate_limited" || result.status === "temporary_google_error" || result.status === "unknown"
   );
@@ -294,6 +295,8 @@ async function resolveCalendarsForUser(user: usersRepository.User) {
     deletedCount: deleted.length,
     accessDeniedCount: accessDenied.length,
     oauthInvalidCount: oauthInvalid.length,
+    ownerGoogleUnavailableCount: ownerGoogleUnavailable.length,
+    ownedOwnerGoogleUnavailableCount: ownedOwnerGoogleUnavailable.length,
     temporaryFailureCount: temporaryFailures.length,
   };
 }
@@ -311,6 +314,10 @@ function recoveryMessages(language: ReturnType<typeof getLanguage>, resolved: Re
 
   if (resolved.oauthInvalidCount > 0) {
     lines.push(messages.googleConnectionExpired(language));
+  }
+
+  if (resolved.ownerGoogleUnavailableCount > 0) {
+    lines.push(messages.ownerGoogleUnavailable(language));
   }
 
   if (resolved.temporaryFailureCount > 0) {
@@ -477,7 +484,7 @@ async function showCalendarInvite(target: ReplyTarget, user: usersRepository.Use
   }
 
   if (checked.status !== "available") {
-    return replyCalendarProblem(target, user, checked.status);
+    return replyCalendarProblem(target, user, checked.status, access.calendar);
   }
 
   const created = await createCalendarInviteLink({
@@ -772,6 +779,7 @@ async function resolveEventCalendarsForUser(user: usersRepository.User) {
     available,
     selected,
     hasOauthProblem: checkedCalendars.some((result) => result.status === "oauth_invalid"),
+    hasOwnerGoogleProblem: checkedCalendars.some((result) => result.status === "owner_google_unavailable"),
     hasAccessProblem: checkedCalendars.some((result) => result.status === "calendar_access_denied"),
     hasTemporaryProblem: checkedCalendars.some((result) =>
       result.status === "rate_limited" || result.status === "temporary_google_error" || result.status === "unknown"
@@ -823,14 +831,6 @@ async function replyEventsForRange(
   kind: EventsRangeType,
 ) {
   const language = getLanguage(user.language);
-  const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
-
-  if (!googleConnection) {
-    return target.reply(messages.welcome(language), {
-      reply_markup: connectGoogleKeyboard(user.telegram_id, language),
-    });
-  }
-
   const calendarRecords = await calendarsRepository.findForUser(user.id);
 
   if (calendarRecords.length === 0) {
@@ -1137,32 +1137,10 @@ async function parseMessageAsEvent(
 ) {
   const eventTraceId = randomUUID();
   const language = getLanguage(user.language);
-  const sourceIdempotencyKey = sourceIdentity.chatId && sourceIdentity.messageId
-    ? eventSourceClaimsRepository.buildEventSourceIdempotencyKey({
-      chatId: sourceIdentity.chatId,
-      messageId: sourceIdentity.messageId,
-    })
-    : null;
 
   const processingMessage = await sendProcessingMessage(ctx, language);
 
   try {
-    const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
-
-    if (!googleConnection) {
-      const existingConnections = await googleConnectionsRepository.findByUser(user.id);
-
-      if (existingConnections.length > 0) {
-        return editProcessingMessage(ctx, processingMessage, messages.googleConnectionExpired(language), {
-          reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
-        });
-      }
-
-      return editProcessingMessage(ctx, processingMessage, messages.welcome(language), {
-        reply_markup: connectGoogleKeyboard(user.telegram_id, language),
-      });
-    }
-
     const eventCalendars = await resolveEventCalendarsForUser(user);
 
     if (!eventCalendars.selected) {
@@ -1170,6 +1148,10 @@ async function parseMessageAsEvent(
         return editProcessingMessage(ctx, processingMessage, messages.googleConnectionExpired(language), {
           reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
         });
+      }
+
+      if (eventCalendars.hasOwnerGoogleProblem) {
+        return editProcessingMessage(ctx, processingMessage, messages.ownerGoogleUnavailable(language));
       }
 
       if (eventCalendars.hasAccessProblem) {
@@ -1196,26 +1178,6 @@ async function parseMessageAsEvent(
       return editProcessingMessage(ctx, processingMessage, messages.createCalendarBeforeEvents(language), {
         reply_markup: emptyCalendarsKeyboard(language),
       });
-    }
-
-    if (sourceIdempotencyKey) {
-      const sourceClaimed = await eventSourceClaimsRepository.claimEventSource({
-        idempotencyKey: sourceIdempotencyKey,
-        userId: user.id,
-      });
-
-      if (!sourceClaimed) {
-        console.info("[event-parse:duplicate-source]", {
-          traceId: eventTraceId,
-          sourceTelegramChatId: sourceIdentity.chatId,
-          sourceTelegramMessageId: sourceIdentity.messageId,
-          sourceTelegramUpdateId: sourceIdentity.updateId,
-        });
-
-        await removeProcessingMessage(ctx, processingMessage);
-
-        return;
-      }
     }
 
     const now = getLocalDateTimeInTimeZone(eventCalendars.selected.timeZone);
@@ -1356,10 +1318,6 @@ async function parseMessageAsEvent(
       await pendingActionsRepository.updateConfirmEventPayload(user.id, draftWithPreview);
     }
 
-    if (sourceIdempotencyKey) {
-      await eventSourceClaimsRepository.markEventSourceCompleted(sourceIdempotencyKey);
-    }
-
     console.info("[event-preview:sent]", {
       traceId: eventTraceId,
       sourceTelegramChatId: sourceIdentity.chatId,
@@ -1369,13 +1327,6 @@ async function parseMessageAsEvent(
 
     return;
   } catch (error) {
-    if (sourceIdempotencyKey) {
-      await eventSourceClaimsRepository.markEventSourceFailed(
-        sourceIdempotencyKey,
-        error instanceof Error ? error.name : typeof error,
-      );
-    }
-
     console.error("Event message processing failed:", {
       operation: "process_event_message",
       userId: user.id,
@@ -1387,7 +1338,12 @@ async function parseMessageAsEvent(
   }
 }
 
-async function replyCalendarProblem(target: ReplyTarget, user: usersRepository.User, status: string) {
+async function replyCalendarProblem(
+  target: ReplyTarget,
+  user: usersRepository.User,
+  status: string,
+  calendar?: calendarsRepository.Calendar,
+) {
   const language = getLanguage(user.language);
 
   if (status === "calendar_not_found") {
@@ -1406,6 +1362,12 @@ async function replyCalendarProblem(target: ReplyTarget, user: usersRepository.U
     return target.reply(messages.googleConnectionExpired(language), {
       reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
     });
+  }
+
+  if (status === "owner_google_unavailable") {
+    return target.reply(messages.ownerGoogleUnavailable(language), calendar?.created_by_user_id === user.id
+      ? { reply_markup: reconnectGoogleKeyboard(user.telegram_id, language) }
+      : undefined);
   }
 
   if (status === "rate_limited" || status === "temporary_google_error") {
@@ -1439,7 +1401,7 @@ async function openCalendarCard(target: ReplyTarget, user: usersRepository.User,
   }
 
   if (checked.status !== "available") {
-    return replyCalendarProblem(target, user, checked.status);
+    return replyCalendarProblem(target, user, checked.status, calendar);
   }
 
   const members = await calendarMembersRepository.listCalendarMembers(calendar.id);
@@ -1483,7 +1445,7 @@ async function showCalendarMembers(target: ReplyTarget, user: usersRepository.Us
   }
 
   if (checked.status !== "available") {
-    return replyCalendarProblem(target, user, checked.status);
+    return replyCalendarProblem(target, user, checked.status, access.calendar);
   }
 
   const members = await calendarMembersRepository.listCalendarMembers(access.calendar.id);
@@ -1509,17 +1471,17 @@ async function showCalendarMembers(target: ReplyTarget, user: usersRepository.Us
 
 async function showHome(target: ReplyTarget, user: usersRepository.User, mode: MainMenuMode = "welcome") {
   const language = getLanguage(user.language);
-  const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
-
-  if (!googleConnection) {
-    return target.reply(messages.welcome(language), {
-      reply_markup: connectGoogleKeyboard(user.telegram_id, language),
-    });
-  }
-
   const calendarRecords = await calendarsRepository.findForUser(user.id);
 
   if (calendarRecords.length === 0) {
+    const googleConnection = await googleConnectionsRepository.findByUserId(user.id);
+
+    if (!googleConnection) {
+      return target.reply(messages.welcome(language), {
+        reply_markup: connectGoogleKeyboard(user.telegram_id, language),
+      });
+    }
+
     return target.reply(messages.noCalendars(language), {
       reply_markup: noCalendarsKeyboard(language),
     });
@@ -1544,6 +1506,12 @@ async function showHome(target: ReplyTarget, user: usersRepository.User, mode: M
     return target.reply(notices.join("\n\n"), {
       reply_markup: reconnectGoogleKeyboard(user.telegram_id, language),
     });
+  }
+
+  if (resolved.ownerGoogleUnavailableCount > 0) {
+    return target.reply(notices.join("\n\n"), resolved.ownedOwnerGoogleUnavailableCount > 0
+      ? { reply_markup: reconnectGoogleKeyboard(user.telegram_id, language) }
+      : undefined);
   }
 
   if (resolved.temporaryFailureCount > 0) {
@@ -1589,6 +1557,12 @@ async function replyCalendarsList(target: ReplyTarget, user: usersRepository.Use
       });
     }
 
+    if (resolved.ownerGoogleUnavailableCount > 0) {
+      return target.reply(notices.join("\n\n"), resolved.ownedOwnerGoogleUnavailableCount > 0
+        ? { reply_markup: reconnectGoogleKeyboard(user.telegram_id, language) }
+        : undefined);
+    }
+
     if (resolved.temporaryFailureCount > 0) {
       return target.reply(notices.join("\n\n"));
     }
@@ -1616,10 +1590,10 @@ async function replyCalendarsList(target: ReplyTarget, user: usersRepository.Use
     ...notices,
     notices.length > 0 ? "" : null,
     messages.calendarsTitle(language),
-    resolved.accessDeniedCount + resolved.oauthInvalidCount + resolved.temporaryFailureCount > 0
+    resolved.accessDeniedCount + resolved.oauthInvalidCount + resolved.ownerGoogleUnavailableCount + resolved.temporaryFailureCount > 0
       ? messages.inaccessibleCalendarsNotice(
         language,
-        resolved.accessDeniedCount + resolved.oauthInvalidCount + resolved.temporaryFailureCount,
+        resolved.accessDeniedCount + resolved.oauthInvalidCount + resolved.ownerGoogleUnavailableCount + resolved.temporaryFailureCount,
       )
       : null,
   ].filter((line): line is string => line !== null).join("\n"), {
@@ -2078,7 +2052,7 @@ bot?.callbackQuery(/^calendar:activate:/, async (ctx) => {
   }
 
   if (checked.status !== "available") {
-    return replyCalendarProblem(ctx, user, checked.status);
+    return replyCalendarProblem(ctx, user, checked.status, calendar);
   }
 
   const access = await getCalendarAccess(calendar.id, user.id);
@@ -2412,7 +2386,7 @@ bot?.callbackQuery(/^calendar:rename:/, async (ctx, next) => {
   }
 
   if (checked.status !== "available") {
-    return replyCalendarProblem(ctx, user, checked.status);
+    return replyCalendarProblem(ctx, user, checked.status, calendar);
   }
 
   await pendingActionsRepository.upsertRenameCalendarAction(
@@ -2475,7 +2449,7 @@ bot?.callbackQuery(/^calendar:delete:/, async (ctx, next) => {
   }
 
   if (checked.status !== "available") {
-    return replyCalendarProblem(ctx, user, checked.status);
+    return replyCalendarProblem(ctx, user, checked.status, calendar);
   }
 
   return ctx.reply(messages.deleteCalendarConfirm(language, checked.metadata.summary), {
@@ -2521,7 +2495,7 @@ bot?.callbackQuery(/^calendar:delete:confirm:/, async (ctx) => {
     const kind = classifyGoogleApiError(error);
 
     if (kind !== "calendar_not_found") {
-      return replyCalendarProblem(ctx, user, kind);
+      return replyCalendarProblem(ctx, user, kind, calendar);
     }
   }
 
@@ -2776,12 +2750,46 @@ bot?.callbackQuery(/^event:save:/, async (ctx) => {
     return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
   }
 
+  const sourceIdempotencyKey = draft.sourceTelegramChatId && draft.sourceTelegramMessageId
+    ? eventSourceClaimsRepository.buildEventSourceIdempotencyKey({
+      calendarId: draft.calendarId,
+      chatId: draft.sourceTelegramChatId,
+      messageId: draft.sourceTelegramMessageId,
+    })
+    : null;
+  let sourceClaimed = false;
+
   try {
+    if (sourceIdempotencyKey) {
+      sourceClaimed = await eventSourceClaimsRepository.claimEventSource({
+        idempotencyKey: sourceIdempotencyKey,
+        userId: user.id,
+      });
+
+      if (!sourceClaimed) {
+        console.info("[event-save:duplicate-source]", {
+          traceId: draft.eventTraceId,
+          calendarId: draft.calendarId,
+          sourceTelegramChatId: draft.sourceTelegramChatId,
+          sourceTelegramMessageId: draft.sourceTelegramMessageId,
+          sourceTelegramUpdateId: draft.sourceTelegramUpdateId,
+        });
+
+        await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draft.draftId);
+
+        return ctx.reply(messages.eventAlreadyAdded(language));
+      }
+    }
+
     const created = await createGoogleCalendarEvent({
       userId: user.id,
       calendarId: draft.calendarId,
       draft,
     });
+
+    if (sourceIdempotencyKey) {
+      await eventSourceClaimsRepository.markEventSourceCompleted(sourceIdempotencyKey);
+    }
 
     await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draft.draftId);
 
@@ -2823,7 +2831,13 @@ bot?.callbackQuery(/^event:save:/, async (ctx) => {
       return ctx.reply(messages.eventBatchPartialFailure(language));
     }
 
-    const kind = classifyGoogleApiError(error);
+    if (sourceIdempotencyKey && sourceClaimed) {
+      await eventSourceClaimsRepository.releaseEventSourceClaim(sourceIdempotencyKey);
+    }
+
+    const kind = error instanceof CalendarGoogleConnectionUnavailableError
+      ? "owner_google_unavailable"
+      : classifyGoogleApiError(error);
 
     await pendingActionsRepository.resetConfirmEventProcessing(user.id, draft.draftId);
 
@@ -2835,7 +2849,9 @@ bot?.callbackQuery(/^event:save:/, async (ctx) => {
       }
     }
 
-    return replyCalendarProblem(ctx, user, kind);
+    const calendar = await calendarsRepository.findById(draft.calendarId);
+
+    return replyCalendarProblem(ctx, user, kind, calendar ?? undefined);
   }
 });
 
@@ -3067,7 +3083,7 @@ bot?.on("message", async (ctx) => {
     }
 
     if (checked.status !== "available") {
-      return replyCalendarProblem(ctx, user, checked.status);
+      return replyCalendarProblem(ctx, user, checked.status, calendar);
     }
 
     try {
@@ -3099,7 +3115,7 @@ bot?.on("message", async (ctx) => {
         });
       }
 
-      return replyCalendarProblem(ctx, user, kind);
+      return replyCalendarProblem(ctx, user, kind, calendar);
     }
   }
 
