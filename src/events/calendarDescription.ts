@@ -146,7 +146,5 @@ export function buildCalendarDescription(input: {
     parts.push(`Source:\n${input.sourceUrl}`);
   }
 
-  parts.push("Saved with Meetory");
-
   return parts.join("\n\n");
 }

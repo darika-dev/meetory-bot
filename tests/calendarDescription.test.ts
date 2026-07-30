@@ -100,6 +100,7 @@ test("calendar description does not inject parsed metadata", () => {
   assert.doesNotMatch(description, /31 июля, 19:00/);
   assert.doesNotMatch(description, /Вход свободный/);
   assert.doesNotMatch(description, /12-й фестиваль «Вкусы пасты» в деревне/);
+  assert.doesNotMatch(description, /Saved with Meetory/);
 });
 
 test("confirm_event lifecycle preserves source description separately from AI description", () => {

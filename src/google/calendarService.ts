@@ -12,6 +12,7 @@ import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
 import { decryptToken } from "../security/tokenEncryption.js";
 import { addCalendarDays, addMinutesToLocalTime, buildLocalDateTime } from "./localDateTime.js";
+import { appendMeetorySignature } from "./meetorySignature.js";
 
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
 const MAX_DAILY_RANGE_DAYS = 31;
@@ -196,10 +197,9 @@ export function buildEventDescription(input: GoogleEventDraft) {
     input.price && !hasEmbeddedPrice ? `Price:\n${input.price}` : null,
     input.eventUrl && !hasEmbeddedUrl(input.eventUrl) ? `Original event:\n${input.eventUrl}` : null,
     input.locationUrl && !hasEmbeddedUrl(input.locationUrl) ? `Map:\n${input.locationUrl}` : null,
-    "Saved with Meetory",
   ].filter((part): part is string => Boolean(part));
 
-  return parts.join("\n\n");
+  return appendMeetorySignature(parts.join("\n\n"));
 }
 
 export function buildBaseEventRequestBody(input: GoogleEventDraft) {
