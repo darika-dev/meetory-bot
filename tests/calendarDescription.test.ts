@@ -30,6 +30,7 @@ function parsedEvent(overrides: Partial<ParsedEvent> = {}): ParsedEvent {
     endTime: null,
     isAllDay: false,
     location: "Агиос Теодорос",
+    price: null,
     description: "12-й фестиваль «Вкусы пасты» в деревне Агиос Теодорос под Ларнакой. 31 июля, 19:00. Вход свободный.",
     eventUrl: "https://example.com/details",
     locationUrl: null,

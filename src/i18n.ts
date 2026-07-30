@@ -13,6 +13,7 @@ export const callbackData = {
   eventBack: "event:back",
   eventSave: "event:save",
   eventEdit: "event:edit",
+  eventEditBack: "event:edit:back",
   eventCancel: "event:cancel",
   eventCancelEdit: "event:edit:cancel",
 } as const;
@@ -113,6 +114,11 @@ export const messages = {
     return language === "ru"
       ? `✅ Календарь "${calendarName}" создан.\n\nТеперь это ваш активный календарь.`
       : `✅ Calendar "${calendarName}" created.\n\nIt is now your active calendar.`;
+  },
+  calendarCreatedForwardEventAgain(language: Language) {
+    return language === "ru"
+      ? "Календарь создан. Перешлите мероприятие ещё раз."
+      : "Calendar created. Please forward the event again.";
   },
   firstCalendarHint(language: Language) {
     return language === "ru"
@@ -363,6 +369,31 @@ export const messages = {
       ? "Отправьте исправленную информацию о мероприятии новым сообщением.\n\nТекущий черновик будет заменён."
       : "Send the corrected event details as a new message.\n\nThe current draft will be replaced.";
   },
+  eventEditMenu(language: Language) {
+    return language === "ru" ? "Что хотите изменить?" : "What would you like to edit?";
+  },
+  eventEditFieldPrompt(language: Language, field: string) {
+    const prompts: Record<string, Record<Language, string>> = {
+      title: {
+        ru: "Введите новое название.",
+        en: "Send a new title.",
+      },
+      location: {
+        ru: "Введите новое место.",
+        en: "Send a new location.",
+      },
+      price: {
+        ru: "Отправьте новую цену.",
+        en: "Send a new price.",
+      },
+      description: {
+        ru: "Отправьте новое описание.",
+        en: "Send a new description.",
+      },
+    };
+
+    return prompts[field]?.[language] ?? prompts.title[language];
+  },
   eventDraftCancelled(language: Language) {
     return language === "ru" ? "Черновик мероприятия удалён." : "Event draft cancelled.";
   },
@@ -520,6 +551,18 @@ export const messages = {
   },
   editButton(language: Language) {
     return language === "ru" ? "✏️ Изменить" : "✏️ Edit";
+  },
+  editTitleButton(language: Language) {
+    return language === "ru" ? "📝 Название" : "📝 Title";
+  },
+  editLocationButton(language: Language) {
+    return language === "ru" ? "📍 Место" : "📍 Location";
+  },
+  editPriceButton(language: Language) {
+    return language === "ru" ? "💰 Цена" : "💰 Price";
+  },
+  editDescriptionButton(language: Language) {
+    return language === "ru" ? "📄 Описание" : "📄 Description";
   },
   openGoogleCalendarButton(language: Language) {
     return language === "ru" ? "Открыть в Google Calendar" : "Open in Google Calendar";

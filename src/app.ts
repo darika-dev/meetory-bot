@@ -9,6 +9,11 @@ import { processTelegramUpdateOnce } from "./telegram/updateIdempotency.js";
 
 export const app = express();
 
+console.info("[startup] app started", {
+  hasTelegramToken: Boolean(process.env.TELEGRAM_API_TOKEN?.trim()),
+  hasWebhookSecret: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
+});
+
 app.use(express.json());
 
 let botInitPromise: Promise<void> | null = null;
@@ -122,6 +127,10 @@ app.post(
     return res.sendStatus(200);
   },
 );
+
+console.info("[startup] webhook registered", {
+  path: "/telegram/webhook",
+});
 
 app.use("/google", googleRouter);
 

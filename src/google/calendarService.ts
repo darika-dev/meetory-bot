@@ -48,6 +48,7 @@ export type GoogleEventDraft = {
   endTime: string | null;
   isAllDay: boolean;
   location: string | null;
+  price: string | null;
   description: string | null;
   sourceDescription?: string | null;
   eventUrl: string | null;
@@ -184,9 +185,11 @@ function enumerateInclusiveDates(startDate: string, endDate: string) {
 export function buildEventDescription(input: GoogleEventDraft) {
   const description = input.sourceDescription?.trim() || input.description?.trim() || null;
   const hasEmbeddedUrl = (url: string | null) => Boolean(url && description?.includes(url));
+  const hasEmbeddedPrice = Boolean(input.price && description?.includes(input.price));
 
   const parts = [
     description,
+    input.price && !hasEmbeddedPrice ? `Price:\n${input.price}` : null,
     input.eventUrl && !hasEmbeddedUrl(input.eventUrl) ? `Original event:\n${input.eventUrl}` : null,
     input.locationUrl && !hasEmbeddedUrl(input.locationUrl) ? `Map:\n${input.locationUrl}` : null,
     "Saved with Meetory",

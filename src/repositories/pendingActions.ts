@@ -1,6 +1,12 @@
 import { sql } from "../db/client.js";
 
-export type PendingActionType = "create_calendar" | "rename_calendar" | "confirm_event" | "edit_event";
+export type PendingActionType =
+  | "create_calendar"
+  | "rename_calendar"
+  | "confirm_event"
+  | "edit_event"
+  | "edit_event_field"
+  | "event_waiting_for_calendar";
 
 export type PendingAction = {
   id: string;
@@ -25,7 +31,7 @@ export async function upsertCreateCalendarAction(userId: string, expiresAt: Date
       NULL,
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id)
+    ON CONFLICT (user_id, type)
     DO UPDATE SET
       type = EXCLUDED.type,
       payload = EXCLUDED.payload,
@@ -51,7 +57,7 @@ export async function upsertRenameCalendarAction(userId: string, calendarId: str
       ${JSON.stringify({ calendarId })},
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id)
+    ON CONFLICT (user_id, type)
     DO UPDATE SET
       type = EXCLUDED.type,
       payload = EXCLUDED.payload,
@@ -77,7 +83,7 @@ export async function upsertConfirmEventAction(userId: string, payload: unknown,
       ${JSON.stringify(payload)},
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id)
+    ON CONFLICT (user_id, type)
     DO UPDATE SET
       type = EXCLUDED.type,
       payload = EXCLUDED.payload,
@@ -103,9 +109,59 @@ export async function upsertEditEventAction(userId: string, expiresAt: Date) {
       NULL,
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id)
+    ON CONFLICT (user_id, type)
     DO UPDATE SET
       type = EXCLUDED.type,
+      payload = EXCLUDED.payload,
+      expires_at = EXCLUDED.expires_at,
+      created_at = NOW()
+    RETURNING id, user_id, type, payload, expires_at, created_at
+  ` as PendingAction[];
+
+  return rows[0];
+}
+
+export async function upsertEventWaitingForCalendarAction(userId: string, payload: unknown, expiresAt: Date) {
+  const rows = await sql`
+    INSERT INTO pending_actions (
+      user_id,
+      type,
+      payload,
+      expires_at
+    )
+    VALUES (
+      ${userId},
+      'event_waiting_for_calendar',
+      ${JSON.stringify(payload)},
+      ${expiresAt.toISOString()}
+    )
+    ON CONFLICT (user_id, type)
+    DO UPDATE SET
+      payload = EXCLUDED.payload,
+      expires_at = EXCLUDED.expires_at,
+      created_at = NOW()
+    RETURNING id, user_id, type, payload, expires_at, created_at
+  ` as PendingAction[];
+
+  return rows[0];
+}
+
+export async function upsertEditEventFieldAction(userId: string, payload: unknown, expiresAt: Date) {
+  const rows = await sql`
+    INSERT INTO pending_actions (
+      user_id,
+      type,
+      payload,
+      expires_at
+    )
+    VALUES (
+      ${userId},
+      'edit_event_field',
+      ${JSON.stringify(payload)},
+      ${expiresAt.toISOString()}
+    )
+    ON CONFLICT (user_id, type)
+    DO UPDATE SET
       payload = EXCLUDED.payload,
       expires_at = EXCLUDED.expires_at,
       created_at = NOW()
@@ -170,6 +226,27 @@ export async function findByUserId(userId: string) {
     SELECT id, user_id, type, payload, expires_at, created_at
     FROM pending_actions
     WHERE user_id = ${userId}
+    ORDER BY CASE type
+      WHEN 'edit_event_field' THEN 1
+      WHEN 'create_calendar' THEN 2
+      WHEN 'rename_calendar' THEN 3
+      WHEN 'edit_event' THEN 4
+      WHEN 'confirm_event' THEN 5
+      WHEN 'event_waiting_for_calendar' THEN 6
+      ELSE 7
+    END
+    LIMIT 1
+  ` as PendingAction[];
+
+  return rows[0] ?? null;
+}
+
+export async function findByUserIdAndType(userId: string, type: PendingActionType) {
+  const rows = await sql`
+    SELECT id, user_id, type, payload, expires_at, created_at
+    FROM pending_actions
+    WHERE user_id = ${userId}
+      AND type = ${type}
     LIMIT 1
   ` as PendingAction[];
 

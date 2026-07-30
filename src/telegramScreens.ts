@@ -159,6 +159,19 @@ export function eventDraftKeyboard(language: Language, calendarName: string, dra
     .text(messages.cancelButton(language), callbackData.eventCancel);
 }
 
+export function eventEditMenuKeyboard(language: Language) {
+  return new InlineKeyboard()
+    .text(messages.editTitleButton(language), "event:edit:title")
+    .row()
+    .text(messages.editLocationButton(language), "event:edit:location")
+    .row()
+    .text(messages.editPriceButton(language), "event:edit:price")
+    .row()
+    .text(messages.editDescriptionButton(language), "event:edit:description")
+    .row()
+    .text(messages.backButton(language), callbackData.eventBack);
+}
+
 export function eventCalendarSelectionKeyboard(input: {
   language: Language;
   calendars: CalendarListItem[];
@@ -177,6 +190,13 @@ export function eventCalendarSelectionKeyboard(input: {
 
 export function eventEditCancelKeyboard(language: Language) {
   return new InlineKeyboard().text(messages.cancelEditingButton(language), callbackData.eventCancelEdit);
+}
+
+export function eventEditFieldKeyboard(language: Language) {
+  return new InlineKeyboard()
+    .text(messages.backButton(language), callbackData.eventEditBack)
+    .row()
+    .text(messages.cancelButton(language), callbackData.eventCancel);
 }
 
 export function eventSavedKeyboard(input: {

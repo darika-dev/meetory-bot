@@ -11,6 +11,7 @@ export type ParsedEvent = {
   endTime: string | null;
   isAllDay: boolean;
   location: string | null;
+  price: string | null;
   description: string | null;
   eventUrl: string | null;
   locationUrl: string | null;
@@ -47,6 +48,7 @@ const eventSchema = {
     endTime: { type: ["string", "null"], pattern: "^\\d{2}:\\d{2}$" },
     isAllDay: { type: "boolean" },
     location: { type: ["string", "null"] },
+    price: { type: ["string", "null"] },
     description: { type: ["string", "null"] },
     eventUrl: { type: ["string", "null"] },
     locationUrl: { type: ["string", "null"] },
@@ -67,6 +69,7 @@ const eventSchema = {
     "endTime",
     "isAllDay",
     "location",
+    "price",
     "description",
     "eventUrl",
     "locationUrl",
@@ -101,6 +104,7 @@ export function validateParsedEvent(value: unknown): ParsedEvent {
     endTime: nullableString(candidate.endTime),
     isAllDay: candidate.isAllDay === true,
     location: nullableString(candidate.location),
+    price: nullableString(candidate.price),
     description: nullableString(candidate.description),
     eventUrl: nullableString(candidate.eventUrl),
     locationUrl: nullableString(candidate.locationUrl),
@@ -124,6 +128,7 @@ export async function parseEvent(input: ParseEventInput) {
           "Extract event details from Russian or English Telegram text.",
           "Return only fields matching the schema.",
           "Do not invent missing title, date, time, location, or URL.",
+          "Extract price only if it is explicitly present, preserving source wording such as Free, €10, Donation, or от €15.",
           "Use YYYY-MM-DD dates and 24-hour HH:mm times.",
           "If time is missing, return null for time fields and set isAllDay=true.",
           "Use scheduleType=single for one ordinary event, including a truly continuous multi-day event.",

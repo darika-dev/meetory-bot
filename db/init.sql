@@ -109,9 +109,14 @@ CREATE TABLE IF NOT EXISTS pending_actions (
   type TEXT NOT NULL,
   payload JSONB NULL,
   expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (user_id)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE pending_actions
+  DROP CONSTRAINT IF EXISTS pending_actions_user_id_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS pending_actions_user_id_type_unique_idx
+  ON pending_actions(user_id, type);
 
 CREATE TABLE IF NOT EXISTS processed_telegram_updates (
   update_id BIGINT PRIMARY KEY,

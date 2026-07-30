@@ -16,6 +16,7 @@ export type ConfirmEventPayload = {
   endTime: string | null;
   isAllDay: boolean;
   location: string | null;
+  price: string | null;
   description: string | null;
   sourceDescription: string | null;
   eventUrl: string | null;
@@ -24,6 +25,8 @@ export type ConfirmEventPayload = {
   sourceTelegramChatId: string | null;
   sourceTelegramMessageId: string | null;
   sourceTelegramUpdateId: string | null;
+  previewChatId: string | null;
+  previewMessageId: string | null;
   calendarId: string;
 };
 
@@ -72,6 +75,7 @@ export function parseConfirmEventPayload(payload: unknown): ConfirmEventPayload 
     endTime: normalizeNullableString(candidate.endTime),
     isAllDay: candidate.isAllDay === true,
     location: normalizeNullableString(candidate.location),
+    price: normalizeNullableString(candidate.price),
     description: normalizeNullableString(candidate.description),
     sourceDescription: normalizeNullableString(candidate.sourceDescription),
     eventUrl: normalizeNullableString(candidate.eventUrl),
@@ -80,6 +84,8 @@ export function parseConfirmEventPayload(payload: unknown): ConfirmEventPayload 
     sourceTelegramChatId: normalizeNullableString(candidate.sourceTelegramChatId),
     sourceTelegramMessageId: normalizeNullableString(candidate.sourceTelegramMessageId),
     sourceTelegramUpdateId: normalizeNullableString(candidate.sourceTelegramUpdateId),
+    previewChatId: normalizeNullableString(candidate.previewChatId),
+    previewMessageId: normalizeNullableString(candidate.previewMessageId),
     calendarId,
   };
 }
@@ -114,6 +120,7 @@ export function buildConfirmEventPayload(
     endTime: parsed.endTime,
     isAllDay: parsed.isAllDay || !parsed.startTime,
     location: parsed.location,
+    price: parsed.price,
     description: parsed.description,
     sourceDescription,
     eventUrl: parsed.eventUrl,
@@ -122,6 +129,8 @@ export function buildConfirmEventPayload(
     sourceTelegramChatId: sourceIdentity.chatId,
     sourceTelegramMessageId: sourceIdentity.messageId,
     sourceTelegramUpdateId: sourceIdentity.updateId,
+    previewChatId: null,
+    previewMessageId: null,
     calendarId,
   } satisfies ConfirmEventPayload;
 }

@@ -11,6 +11,12 @@ import {
 } from "./events/eventDraft.js";
 import { buildCalendarDescription } from "./events/calendarDescription.js";
 import {
+  isEventEditField,
+  parseEditEventFieldPayload,
+  updateDraftField,
+} from "./events/eventDraftEditing.js";
+import { parseEventWaitingForCalendarPayload } from "./events/eventWaitingForCalendar.js";
+import {
   extractLinksFromTextEntities,
   preserveHiddenLinksInText,
   type TelegramTextEntity,
@@ -46,7 +52,8 @@ import {
   emptyCalendarsKeyboard,
   eventCalendarSelectionKeyboard,
   eventDraftKeyboard,
-  eventEditCancelKeyboard,
+  eventEditFieldKeyboard,
+  eventEditMenuKeyboard,
   eventSavedKeyboard,
   googleDisconnectConfirmKeyboard,
   mainCalendarKeyboard,
@@ -62,12 +69,28 @@ const configuredBotId = getBotIdFromToken(token);
 
 function createBot() {
   if (!token) {
+    console.error("[startup] bot not created", {
+      reason: "missing_telegram_token",
+    });
+
     return null;
   }
 
   try {
-    return new Bot(token);
-  } catch {
+    const telegramBot = new Bot(token);
+
+    console.info("[startup] bot created", {
+      botIdFromToken: configuredBotId,
+    });
+
+    return telegramBot;
+  } catch (error) {
+    console.error("[startup] bot not created", {
+      reason: "bot_constructor_failed",
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+
     return null;
   }
 }
@@ -389,13 +412,18 @@ async function editProcessingMessage(
   options?: Parameters<Context["api"]["editMessageText"]>[3],
 ) {
   if (!processingMessage) {
-    return ctx.reply(text, options as Parameters<Context["reply"]>[1]);
+    const message = await ctx.reply(text, options as Parameters<Context["reply"]>[1]);
+
+    return {
+      chatId: message.chat.id,
+      messageId: message.message_id,
+    } satisfies ProcessingMessage;
   }
 
   try {
     await ctx.api.editMessageText(processingMessage.chatId, processingMessage.messageId, text, options);
 
-    return;
+    return processingMessage;
   } catch (error) {
     console.error("Telegram processing message edit failed:", {
       operation: "edit_event_processing_message",
@@ -406,7 +434,12 @@ async function editProcessingMessage(
 
     await removeProcessingMessage(ctx, processingMessage);
 
-    return ctx.reply(text, options as Parameters<Context["reply"]>[1]);
+    const message = await ctx.reply(text, options as Parameters<Context["reply"]>[1]);
+
+    return {
+      chatId: message.chat.id,
+      messageId: message.message_id,
+    } satisfies ProcessingMessage;
   }
 }
 
@@ -582,9 +615,10 @@ function formatEventDraftMessage(
       `📅 ${formatDateRangeForLanguage(draft.startDate, draft.endDate, language)}`,
       `🕒 ${formatEventTime(draft, language)}`,
       `📍 ${draft.location ?? messages.eventLocationNotSpecified(language)}`,
+      draft.price ? `💰 ${draft.price}` : null,
       ...linkLines,
       "",
-    ];
+    ].filter((line): line is string => line !== null);
 
     if (draft.scheduleType === "daily_range") {
       lines.push(messages.dailyRangeEventsWillBeCreated(language, eventCount), "");
@@ -602,11 +636,12 @@ function formatEventDraftMessage(
     `📅 ${formatDateForLanguage(draft.startDate, language)}`,
     `🕒 ${formatEventTime(draft, language)}`,
     `📍 ${draft.location ?? messages.eventLocationNotSpecified(language)}`,
+    draft.price ? `💰 ${draft.price}` : null,
     ...linkLines,
     "",
     messages.eventSaveTo(language),
     `📅 ${calendarName}`,
-  ].join("\n");
+  ].filter((line): line is string => line !== null).join("\n");
 }
 
 function formatEventLinkLines(draft: Pick<ConfirmEventPayload, "eventUrl" | "locationUrl" | "sourceUrl">) {
@@ -671,6 +706,47 @@ async function replyEventDraft(
   });
 }
 
+async function showUpdatedEventDraft(ctx: Context, user: usersRepository.User, draft: ConfirmEventPayload) {
+  const language = getLanguage(user.language);
+  const selectedCalendar = await getSelectedEventCalendar(user, draft.calendarId);
+
+  if (!selectedCalendar) {
+    const message = await ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+
+    return {
+      ...draft,
+      previewChatId: String(message.chat.id),
+      previewMessageId: String(message.message_id),
+    };
+  }
+
+  const text = formatEventDraftMessage(language, draft, selectedCalendar.summary);
+  const replyMarkup = eventDraftKeyboard(language, selectedCalendar.summary, draft.draftId);
+
+  if (draft.previewChatId && draft.previewMessageId) {
+    try {
+      await ctx.api.deleteMessage(draft.previewChatId, Number(draft.previewMessageId));
+    } catch (error) {
+      console.error("Event preview delete failed:", {
+        operation: "delete_old_event_preview",
+        userId: user.id,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const message = await ctx.reply(text, {
+    reply_markup: replyMarkup,
+  });
+
+  return {
+    ...draft,
+    previewChatId: String(message.chat.id),
+    previewMessageId: String(message.message_id),
+  };
+}
+
 async function parseMessageAsEvent(
   ctx: Context,
   user: usersRepository.User,
@@ -687,24 +763,6 @@ async function parseMessageAsEvent(
       messageId: sourceIdentity.messageId,
     })
     : null;
-
-  if (sourceIdempotencyKey) {
-    const sourceClaimed = await eventSourceClaimsRepository.claimEventSource({
-      idempotencyKey: sourceIdempotencyKey,
-      userId: user.id,
-    });
-
-    if (!sourceClaimed) {
-      console.info("[event-parse:duplicate-source]", {
-        traceId: eventTraceId,
-        sourceTelegramChatId: sourceIdentity.chatId,
-        sourceTelegramMessageId: sourceIdentity.messageId,
-        sourceTelegramUpdateId: sourceIdentity.updateId,
-      });
-
-      return;
-    }
-  }
 
   const processingMessage = await sendProcessingMessage(ctx, language);
 
@@ -744,9 +802,40 @@ async function parseMessageAsEvent(
         return editProcessingMessage(ctx, processingMessage, messages.googleCalendarTemporaryUnavailable(language));
       }
 
+      await pendingActionsRepository.upsertEventWaitingForCalendarAction(
+        user.id,
+        {
+          text,
+          forwardContext,
+          detectedLinks,
+          sourceIdentity,
+        },
+        new Date(Date.now() + EVENT_DRAFT_TTL_MS),
+      );
+
       return editProcessingMessage(ctx, processingMessage, messages.createCalendarBeforeEvents(language), {
         reply_markup: emptyCalendarsKeyboard(language),
       });
+    }
+
+    if (sourceIdempotencyKey) {
+      const sourceClaimed = await eventSourceClaimsRepository.claimEventSource({
+        idempotencyKey: sourceIdempotencyKey,
+        userId: user.id,
+      });
+
+      if (!sourceClaimed) {
+        console.info("[event-parse:duplicate-source]", {
+          traceId: eventTraceId,
+          sourceTelegramChatId: sourceIdentity.chatId,
+          sourceTelegramMessageId: sourceIdentity.messageId,
+          sourceTelegramUpdateId: sourceIdentity.updateId,
+        });
+
+        await removeProcessingMessage(ctx, processingMessage);
+
+        return;
+      }
     }
 
     const now = getLocalDateTimeInTimeZone(eventCalendars.selected.timeZone);
@@ -874,10 +963,22 @@ async function parseMessageAsEvent(
       endTime: draft.endTime,
     });
 
+    const previewMessage = await replyEventDraft(ctx, user, draft, processingMessage);
+    const draftWithPreview = previewMessage
+      ? {
+        ...draft,
+        previewChatId: String(previewMessage.chatId),
+        previewMessageId: String(previewMessage.messageId),
+      }
+      : draft;
+
+    if (previewMessage) {
+      await pendingActionsRepository.updateConfirmEventPayload(user.id, draftWithPreview);
+    }
+
     if (sourceIdempotencyKey) {
       await eventSourceClaimsRepository.markEventSourceCompleted(sourceIdempotencyKey);
     }
-    const result = await replyEventDraft(ctx, user, draft, processingMessage);
 
     console.info("[event-preview:sent]", {
       traceId: eventTraceId,
@@ -886,7 +987,7 @@ async function parseMessageAsEvent(
       sourceTelegramUpdateId: sourceIdentity.updateId,
     });
 
-    return result;
+    return;
   } catch (error) {
     if (sourceIdempotencyKey) {
       await eventSourceClaimsRepository.markEventSourceFailed(
@@ -1192,6 +1293,16 @@ bot?.command("disconnect", async (ctx) => {
   }
 
   return startDisconnectGoogleFlow(ctx, user);
+});
+
+bot?.on("callback_query:data", async (ctx, next) => {
+  console.info("[callback:received]", {
+    callbackData: ctx.callbackQuery.data,
+    fromId: ctx.from?.id ?? null,
+    messageId: ctx.callbackQuery.message?.message_id ?? null,
+  });
+
+  return next();
 });
 
 bot?.callbackQuery("calendar:create", async (ctx) => {
@@ -1578,13 +1689,58 @@ bot?.callbackQuery("event:edit", async (ctx) => {
     return;
   }
 
-  await pendingActionsRepository.upsertEditEventAction(
+  const language = getLanguage(user.language);
+  const pendingAction = await pendingActionsRepository.findByUserIdAndType(user.id, "confirm_event");
+  const draft = pendingAction ? parseConfirmEventPayload(pendingAction.payload) : null;
+
+  if (!draft) {
+    return ctx.reply(messages.eventDraftNoLongerAvailable(language));
+  }
+
+  return ctx.reply(messages.eventEditMenu(language), {
+    reply_markup: eventEditMenuKeyboard(language),
+  });
+});
+
+bot?.callbackQuery(/^event:edit:/, async (ctx, next) => {
+  if (ctx.callbackQuery.data === "event:edit:cancel") {
+    return next();
+  }
+
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const field = ctx.callbackQuery.data.slice("event:edit:".length);
+
+  if (!isEventEditField(field)) {
+    return ctx.reply(messages.eventEditMenu(language), {
+      reply_markup: eventEditMenuKeyboard(language),
+    });
+  }
+
+  const pendingAction = await pendingActionsRepository.findByUserIdAndType(user.id, "confirm_event");
+  const draft = pendingAction ? parseConfirmEventPayload(pendingAction.payload) : null;
+
+  if (!draft) {
+    return ctx.reply(messages.eventDraftNoLongerAvailable(language));
+  }
+
+  await pendingActionsRepository.upsertEditEventFieldAction(
     user.id,
+    {
+      draftId: draft.draftId,
+      field,
+    },
     new Date(Date.now() + EVENT_DRAFT_TTL_MS),
   );
 
-  return ctx.reply(messages.eventEditPrompt(getLanguage(user.language)), {
-    reply_markup: eventEditCancelKeyboard(getLanguage(user.language)),
+  return ctx.reply(messages.eventEditFieldPrompt(language, field), {
+    reply_markup: eventEditFieldKeyboard(language),
   });
 });
 
@@ -1596,7 +1752,7 @@ bot?.callbackQuery("event:edit:cancel", async (ctx) => {
     return;
   }
 
-  await pendingActionsRepository.deleteByUserId(user.id);
+  await pendingActionsRepository.deleteByUserIdAndType(user.id, "edit_event_field");
 
   return ctx.reply(messages.eventDraftCancelled(getLanguage(user.language)));
 });
@@ -1860,8 +2016,48 @@ bot?.on("message", async (ctx) => {
     return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx), getEventSourceIdentity(ctx));
   }
 
+  if (pendingAction.type === "edit_event_field") {
+    if (new Date(pendingAction.expires_at).getTime() <= Date.now()) {
+      await pendingActionsRepository.deleteByUserIdAndType(user.id, "edit_event_field");
+
+      return ctx.reply(messages.eventAlreadySavedOrExpired(language));
+    }
+
+    const editPayload = parseEditEventFieldPayload(pendingAction.payload);
+    const confirmAction = await pendingActionsRepository.findByUserIdAndType(user.id, "confirm_event");
+    const draft = confirmAction ? parseConfirmEventPayload(confirmAction.payload) : null;
+
+    if (!editPayload || !draft || editPayload.draftId !== draft.draftId) {
+      await pendingActionsRepository.deleteByUserIdAndType(user.id, "edit_event_field");
+
+      return ctx.reply(messages.eventDraftNoLongerAvailable(language));
+    }
+
+    const updatedDraft = updateDraftField(draft, editPayload.field, text);
+
+    const draftWithPreview = await showUpdatedEventDraft(ctx, user, {
+      ...updatedDraft,
+      status: "ready",
+    });
+
+    await pendingActionsRepository.updateConfirmEventPayload(user.id, draftWithPreview);
+    await pendingActionsRepository.deleteByUserIdAndType(user.id, "edit_event_field");
+
+    logEventAnalysisIgnored(ctx, "edit_event_field_handled", handlerName);
+
+    return;
+  }
+
   if (pendingAction.type === "confirm_event") {
     await pendingActionsRepository.deleteByUserIdAndType(user.id, "confirm_event");
+
+    logEventAnalysisAccepted(ctx, handlerName);
+
+    return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx), getEventSourceIdentity(ctx));
+  }
+
+  if (pendingAction.type === "event_waiting_for_calendar") {
+    await pendingActionsRepository.deleteByUserIdAndType(user.id, "event_waiting_for_calendar");
 
     logEventAnalysisAccepted(ctx, handlerName);
 
@@ -2031,7 +2227,39 @@ bot?.on("message", async (ctx) => {
     reply_markup: mainCalendarKeyboard(language),
   });
 
+  await pendingActionsRepository.deleteByUserIdAndType(user.id, "create_calendar");
+
+  const waitingEventAction = await pendingActionsRepository.findByUserIdAndType(user.id, "event_waiting_for_calendar");
+
+  if (waitingEventAction) {
+    const waitingPayload = parseEventWaitingForCalendarPayload(waitingEventAction.payload);
+
+    await pendingActionsRepository.deleteByUserIdAndType(user.id, "event_waiting_for_calendar");
+
+    if (
+      !waitingPayload
+      || new Date(waitingEventAction.expires_at).getTime() <= Date.now()
+    ) {
+      return ctx.reply(messages.calendarCreatedForwardEventAgain(language));
+    }
+
+    logEventAnalysisAccepted(ctx, handlerName);
+
+    return parseMessageAsEvent(
+      ctx,
+      user,
+      waitingPayload.text,
+      waitingPayload.forwardContext,
+      waitingPayload.detectedLinks,
+      waitingPayload.sourceIdentity,
+    );
+  }
+
   if (!hadCalendarsBeforeCreate) {
     return ctx.reply(messages.firstCalendarHint(language));
   }
+});
+
+console.info("[startup] middleware registered", {
+  botCreated: Boolean(bot),
 });
