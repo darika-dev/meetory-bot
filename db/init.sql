@@ -139,8 +139,15 @@ CREATE TABLE IF NOT EXISTS pending_actions (
 ALTER TABLE pending_actions
   DROP CONSTRAINT IF EXISTS pending_actions_user_id_key;
 
-CREATE UNIQUE INDEX IF NOT EXISTS pending_actions_user_id_type_unique_idx
-  ON pending_actions(user_id, type);
+DROP INDEX IF EXISTS pending_actions_user_id_type_unique_idx;
+
+CREATE UNIQUE INDEX IF NOT EXISTS pending_actions_singleton_user_type_unique_idx
+  ON pending_actions(user_id, type)
+  WHERE type <> 'confirm_event';
+
+CREATE INDEX IF NOT EXISTS pending_actions_confirm_event_draft_id_idx
+  ON pending_actions(user_id, ((payload ->> 'draftId')))
+  WHERE type = 'confirm_event';
 
 CREATE TABLE IF NOT EXISTS processed_telegram_updates (
   update_id BIGINT PRIMARY KEY,

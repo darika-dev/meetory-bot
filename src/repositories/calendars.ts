@@ -84,6 +84,7 @@ export async function createOwnedCalendarAndActivate(input: CreateOwnedCalendarI
     deleted_pending_action AS (
       DELETE FROM pending_actions
       WHERE user_id = ${input.ownerUserId}
+        AND type = 'create_calendar'
       RETURNING id
     )
     SELECT id, name, google_calendar_id, google_connection_id, created_by_user_id, created_at, updated_at

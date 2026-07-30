@@ -1128,15 +1128,33 @@ async function showUpdatedEventDraft(ctx: Context, user: usersRepository.User, d
   };
 }
 
-async function discardCurrentEventDraft(ctx: Context, user: usersRepository.User) {
-  const language = getLanguage(user.language);
-  const pendingAction = await pendingActionsRepository.findByUserIdAndType(user.id, "confirm_event");
+async function findEventDraftAction(userId: string, draftId: string) {
+  const pendingAction = await pendingActionsRepository.findConfirmEventByDraftId(userId, draftId);
   const draft = pendingAction ? parseConfirmEventPayload(pendingAction.payload) : null;
+
+  if (!pendingAction || !draft) {
+    return {
+      pendingAction: null,
+      draft: null,
+      expired: false,
+    };
+  }
+
+  return {
+    pendingAction,
+    draft,
+    expired: new Date(pendingAction.expires_at).getTime() <= Date.now(),
+  };
+}
+
+async function discardEventDraftById(ctx: Context, user: usersRepository.User, draftId: string) {
+  const language = getLanguage(user.language);
+  const { draft } = await findEventDraftAction(user.id, draftId);
 
   return discardEventDraft({
     draft,
     discardedMessage: messages.eventDraftDiscarded(language),
-    clearDraft: () => pendingActionsRepository.deleteByUserId(user.id),
+    clearDraft: () => pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draftId),
     deletePreview: (chatId, messageId) => ctx.api.deleteMessage(chatId, messageId).then(() => undefined),
     sendMessage: (text) => ctx.reply(text).then(() => undefined),
     logPreviewDeleteError: (error) => {
@@ -1826,7 +1844,7 @@ bot?.callbackQuery("calendar:create:cancel", async (ctx) => {
     return;
   }
 
-  await pendingActionsRepository.deleteByUserId(user.id);
+  await pendingActionsRepository.deleteByUserIdAndType(user.id, "create_calendar");
 
   return replyCalendarsList(ctx, user, messages.creationCancelled(getLanguage(user.language)));
 });
@@ -2480,7 +2498,7 @@ bot?.callbackQuery("calendar:rename:cancel", async (ctx) => {
     return;
   }
 
-  await pendingActionsRepository.deleteByUserId(user.id);
+  await pendingActionsRepository.deleteByUserIdAndType(user.id, "rename_calendar");
 
   return ctx.reply(messages.renameCalendarCancelled(getLanguage(user.language)));
 });
@@ -2590,16 +2608,25 @@ bot?.callbackQuery("event:calendar", async (ctx) => {
     return;
   }
 
+  return ctx.reply(messages.eventDraftNoLongerAvailable(getLanguage(user.language)));
+});
+
+bot?.callbackQuery(/^event:calendar:[^:]+$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
   const language = getLanguage(user.language);
-  const pendingAction = await pendingActionsRepository.findByUserId(user.id);
-  const draft = pendingAction?.type === "confirm_event"
-    ? parseConfirmEventPayload(pendingAction.payload)
-    : null;
+  const draftId = ctx.callbackQuery.data.slice("event:calendar:".length);
+  const { draft, expired } = await findEventDraftAction(user.id, draftId);
 
-  if (!draft || new Date(pendingAction.expires_at).getTime() <= Date.now()) {
-    await pendingActionsRepository.deleteByUserId(user.id);
+  if (!draft || expired) {
+    await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draftId);
 
-    return ctx.reply(messages.eventAlreadySavedOrExpired(language));
+    return ctx.reply(messages.eventDraftNoLongerAvailable(language));
   }
 
   const eventCalendars = await resolveEventCalendarsForUser(user);
@@ -2615,11 +2642,12 @@ bot?.callbackQuery("event:calendar", async (ctx) => {
       language,
       calendars: eventCalendars.available,
       selectedCalendarId: draft.calendarId,
+      draftId,
     }),
   });
 });
 
-bot?.callbackQuery(/^event:calendar:/, async (ctx) => {
+bot?.callbackQuery(/^event:calendar:[^:]+:[^:]+$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const user = await getUserFromCallback(ctx);
 
@@ -2628,16 +2656,13 @@ bot?.callbackQuery(/^event:calendar:/, async (ctx) => {
   }
 
   const language = getLanguage(user.language);
-  const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "event:calendar:");
-  const pendingAction = await pendingActionsRepository.findByUserId(user.id);
-  const draft = pendingAction?.type === "confirm_event"
-    ? parseConfirmEventPayload(pendingAction.payload)
-    : null;
+  const [, , draftId, calendarId] = ctx.callbackQuery.data.split(":");
+  const { draft, expired } = await findEventDraftAction(user.id, draftId);
 
-  if (!draft || new Date(pendingAction.expires_at).getTime() <= Date.now()) {
-    await pendingActionsRepository.deleteByUserId(user.id);
+  if (!draft || expired) {
+    await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draftId);
 
-    return ctx.reply(messages.eventAlreadySavedOrExpired(language));
+    return ctx.reply(messages.eventDraftNoLongerAvailable(language));
   }
 
   const selectedCalendar = await getSelectedEventCalendar(user, calendarId);
@@ -2665,13 +2690,24 @@ bot?.callbackQuery("event:back", async (ctx) => {
     return;
   }
 
-  const pendingAction = await pendingActionsRepository.findByUserId(user.id);
-  const draft = pendingAction?.type === "confirm_event"
-    ? parseConfirmEventPayload(pendingAction.payload)
-    : null;
+  return ctx.reply(messages.eventDraftNoLongerAvailable(getLanguage(user.language)));
+});
 
-  if (!draft) {
-    return ctx.reply(messages.eventAlreadySavedOrExpired(getLanguage(user.language)));
+bot?.callbackQuery(/^event:back:[^:]+$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const draftId = ctx.callbackQuery.data.slice("event:back:".length);
+  const { draft, expired } = await findEventDraftAction(user.id, draftId);
+
+  if (!draft || expired) {
+    await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draftId);
+
+    return ctx.reply(messages.eventDraftNoLongerAvailable(getLanguage(user.language)));
   }
 
   return replyEventDraft(ctx, user, draft);
@@ -2685,16 +2721,29 @@ bot?.callbackQuery("event:edit", async (ctx) => {
     return;
   }
 
-  const language = getLanguage(user.language);
-  const pendingAction = await pendingActionsRepository.findByUserIdAndType(user.id, "confirm_event");
-  const draft = pendingAction ? parseConfirmEventPayload(pendingAction.payload) : null;
+  return ctx.reply(messages.eventDraftNoLongerAvailable(getLanguage(user.language)));
+});
 
-  if (!draft) {
+bot?.callbackQuery(/^event:edit:[^:]+$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const draftId = ctx.callbackQuery.data.slice("event:edit:".length);
+  const { draft, expired } = await findEventDraftAction(user.id, draftId);
+
+  if (!draft || expired) {
+    await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draftId);
+
     return ctx.reply(messages.eventDraftNoLongerAvailable(language));
   }
 
   return ctx.reply(messages.eventEditMenu(language), {
-    reply_markup: eventEditMenuKeyboard(language),
+    reply_markup: eventEditMenuKeyboard(language, draftId),
   });
 });
 
@@ -2711,18 +2760,19 @@ bot?.callbackQuery(/^event:edit:/, async (ctx, next) => {
   }
 
   const language = getLanguage(user.language);
-  const field = ctx.callbackQuery.data.slice("event:edit:".length);
+  const [, , draftId, field] = ctx.callbackQuery.data.split(":");
 
-  if (!isEventEditField(field)) {
+  if (!draftId || !isEventEditField(field)) {
     return ctx.reply(messages.eventEditMenu(language), {
-      reply_markup: eventEditMenuKeyboard(language),
+      reply_markup: eventEditMenuKeyboard(language, draftId || ""),
     });
   }
 
-  const pendingAction = await pendingActionsRepository.findByUserIdAndType(user.id, "confirm_event");
-  const draft = pendingAction ? parseConfirmEventPayload(pendingAction.payload) : null;
+  const { draft, expired } = await findEventDraftAction(user.id, draftId);
 
-  if (!draft) {
+  if (!draft || expired) {
+    await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draftId);
+
     return ctx.reply(messages.eventDraftNoLongerAvailable(language));
   }
 
@@ -2736,7 +2786,7 @@ bot?.callbackQuery(/^event:edit:/, async (ctx, next) => {
   );
 
   return ctx.reply(messages.eventEditFieldPrompt(language, field), {
-    reply_markup: eventEditFieldKeyboard(language),
+    reply_markup: eventEditFieldKeyboard(language, draftId),
   });
 });
 
@@ -2761,7 +2811,20 @@ bot?.callbackQuery("event:cancel", async (ctx) => {
     return;
   }
 
-  return discardCurrentEventDraft(ctx, user);
+  return ctx.reply(messages.eventDraftNoLongerAvailable(getLanguage(user.language)));
+});
+
+bot?.callbackQuery(/^event:cancel:[^:]+$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const draftId = ctx.callbackQuery.data.slice("event:cancel:".length);
+
+  return discardEventDraftById(ctx, user, draftId);
 });
 
 bot?.callbackQuery("event:save", async (ctx) => {
@@ -2799,7 +2862,7 @@ bot?.callbackQuery(/^event:save:/, async (ctx) => {
         payloadReadable: false,
       });
 
-      await pendingActionsRepository.deleteByUserIdAndType(user.id, "confirm_event");
+      await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, draftId);
     }
 
     return ctx.reply(messages.eventDraftNoLongerAvailable(language));
@@ -3060,11 +3123,16 @@ bot?.on("message", async (ctx) => {
     }
 
     const editPayload = parseEditEventFieldPayload(pendingAction.payload);
-    const confirmAction = await pendingActionsRepository.findByUserIdAndType(user.id, "confirm_event");
-    const draft = confirmAction ? parseConfirmEventPayload(confirmAction.payload) : null;
+    const draftAction = editPayload
+      ? await findEventDraftAction(user.id, editPayload.draftId)
+      : null;
+    const draft = draftAction?.draft ?? null;
 
-    if (!editPayload || !draft || editPayload.draftId !== draft.draftId) {
+    if (!editPayload || !draft || draftAction?.expired) {
       await pendingActionsRepository.deleteByUserIdAndType(user.id, "edit_event_field");
+      if (editPayload) {
+        await pendingActionsRepository.deleteConfirmEventByDraftId(user.id, editPayload.draftId);
+      }
 
       return ctx.reply(messages.eventDraftNoLongerAvailable(language));
     }
@@ -3085,8 +3153,6 @@ bot?.on("message", async (ctx) => {
   }
 
   if (pendingAction.type === "confirm_event") {
-    await pendingActionsRepository.deleteByUserIdAndType(user.id, "confirm_event");
-
     logEventAnalysisAccepted(ctx, handlerName);
 
     return parseMessageAsEvent(ctx, user, text, getForwardContext(ctx), extractDetectedLinks(ctx), getEventSourceIdentity(ctx));
@@ -3101,7 +3167,7 @@ bot?.on("message", async (ctx) => {
   }
 
   if (new Date(pendingAction.expires_at).getTime() <= Date.now()) {
-    await pendingActionsRepository.deleteByUserId(user.id);
+    await pendingActionsRepository.deleteByUserIdAndType(user.id, pendingAction.type);
 
     if (pendingAction.type === "edit_event") {
       return ctx.reply(messages.eventAlreadySavedOrExpired(language));
@@ -3122,7 +3188,7 @@ bot?.on("message", async (ctx) => {
     const payload = parseRenameCalendarPayload(pendingAction.payload);
 
     if (!payload) {
-      await pendingActionsRepository.deleteByUserId(user.id);
+      await pendingActionsRepository.deleteByUserIdAndType(user.id, "rename_calendar");
 
       return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
     }
@@ -3132,7 +3198,7 @@ bot?.on("message", async (ctx) => {
     try {
       access = await assertCalendarOwner(payload.calendarId, user.id);
     } catch {
-      await pendingActionsRepository.deleteByUserId(user.id);
+      await pendingActionsRepository.deleteByUserIdAndType(user.id, "rename_calendar");
 
       return ctx.reply(messages.renameOwnerOnly(language));
     }
@@ -3146,7 +3212,7 @@ bot?.on("message", async (ctx) => {
     const checked = await checkCalendarAvailability(calendar);
 
     if (checked.status === "calendar_not_found") {
-      await pendingActionsRepository.deleteByUserId(user.id);
+      await pendingActionsRepository.deleteByUserIdAndType(user.id, "rename_calendar");
       await cleanupDeletedCalendar(calendar);
 
       return ctx.reply(messages.calendarDeletedInGoogle(language), {
@@ -3164,7 +3230,7 @@ bot?.on("message", async (ctx) => {
         name,
       });
 
-      await pendingActionsRepository.deleteByUserId(user.id);
+      await pendingActionsRepository.deleteByUserIdAndType(user.id, "rename_calendar");
 
       try {
         await calendarsRepository.updateLegacyName(calendar.id, renamed.summary);
@@ -3179,7 +3245,7 @@ bot?.on("message", async (ctx) => {
       const kind = classifyGoogleApiError(error);
 
       if (kind === "calendar_not_found") {
-        await pendingActionsRepository.deleteByUserId(user.id);
+        await pendingActionsRepository.deleteByUserIdAndType(user.id, "rename_calendar");
         await cleanupDeletedCalendar(calendar);
 
         return ctx.reply(messages.calendarDeletedInGoogle(language), {

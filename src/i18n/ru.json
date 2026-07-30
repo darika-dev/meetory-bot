@@ -104,7 +104,7 @@
     "draftCancelled": "Черновик мероприятия удалён.",
     "draftDiscarded": "✅ Черновик удалён.\n\nПерешлите другое мероприятие, когда будете готовы.",
     "alreadySavedOrExpired": "Это мероприятие уже сохранено или черновик устарел.",
-    "draftNoLongerAvailable": "Этот черновик больше недоступен.",
+    "draftNoLongerAvailable": "Это событие больше недоступно.\n\nОтправьте анонс ещё раз.",
     "alreadyAdded": "Это мероприятие уже добавлено в этот календарь.",
     "saved": "✅ Мероприятие сохранено.\n\n🎫 {title}\n📅 {date}\n📅 {calendarName}",
     "dailyRangeSaved": "✅ Сохранено событий: {count}.\n\n🎫 {title}\n📅 {dateRange}\n🕒 {timeRange}\n📅 {calendarName}",

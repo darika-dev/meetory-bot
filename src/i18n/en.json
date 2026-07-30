@@ -104,7 +104,7 @@
     "draftCancelled": "Event draft cancelled.",
     "draftDiscarded": "✅ Draft discarded.\n\nForward another event whenever you're ready.",
     "alreadySavedOrExpired": "This event has already been saved or the draft has expired.",
-    "draftNoLongerAvailable": "This draft is no longer available.",
+    "draftNoLongerAvailable": "This draft is no longer available.\n\nPlease send the event again.",
     "alreadyAdded": "This event has already been added to this calendar.",
     "saved": "✅ Event saved.\n\n🎫 {title}\n📅 {date}\n📅 {calendarName}",
     "dailyRangeSaved": "✅ {count} events saved.\n\n🎫 {title}\n📅 {dateRange}\n🕒 {timeRange}\n📅 {calendarName}",

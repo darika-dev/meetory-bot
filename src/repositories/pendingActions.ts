@@ -32,7 +32,7 @@ export async function upsertCreateCalendarAction(userId: string, expiresAt: Date
       NULL,
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id, type)
+    ON CONFLICT (user_id, type) WHERE type <> 'confirm_event'
     DO UPDATE SET
       type = EXCLUDED.type,
       payload = EXCLUDED.payload,
@@ -58,7 +58,7 @@ export async function upsertRenameCalendarAction(userId: string, calendarId: str
       ${JSON.stringify({ calendarId })},
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id, type)
+    ON CONFLICT (user_id, type) WHERE type <> 'confirm_event'
     DO UPDATE SET
       type = EXCLUDED.type,
       payload = EXCLUDED.payload,
@@ -84,12 +84,6 @@ export async function upsertConfirmEventAction(userId: string, payload: unknown,
       ${JSON.stringify(payload)},
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id, type)
-    DO UPDATE SET
-      type = EXCLUDED.type,
-      payload = EXCLUDED.payload,
-      expires_at = EXCLUDED.expires_at,
-      created_at = NOW()
     RETURNING id, user_id, type, payload, expires_at, created_at
   ` as PendingAction[];
 
@@ -110,7 +104,7 @@ export async function upsertEditEventAction(userId: string, expiresAt: Date) {
       NULL,
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id, type)
+    ON CONFLICT (user_id, type) WHERE type <> 'confirm_event'
     DO UPDATE SET
       type = EXCLUDED.type,
       payload = EXCLUDED.payload,
@@ -136,7 +130,7 @@ export async function upsertEventWaitingForCalendarAction(userId: string, payloa
       ${JSON.stringify(payload)},
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id, type)
+    ON CONFLICT (user_id, type) WHERE type <> 'confirm_event'
     DO UPDATE SET
       payload = EXCLUDED.payload,
       expires_at = EXCLUDED.expires_at,
@@ -161,7 +155,7 @@ export async function upsertEditEventFieldAction(userId: string, payload: unknow
       ${JSON.stringify(payload)},
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id, type)
+    ON CONFLICT (user_id, type) WHERE type <> 'confirm_event'
     DO UPDATE SET
       payload = EXCLUDED.payload,
       expires_at = EXCLUDED.expires_at,
@@ -186,7 +180,7 @@ export async function upsertCalendarJoinAction(userId: string, payload: unknown,
       ${JSON.stringify(payload)},
       ${expiresAt.toISOString()}
     )
-    ON CONFLICT (user_id, type)
+    ON CONFLICT (user_id, type) WHERE type <> 'confirm_event'
     DO UPDATE SET
       payload = EXCLUDED.payload,
       expires_at = EXCLUDED.expires_at,
@@ -198,12 +192,35 @@ export async function upsertCalendarJoinAction(userId: string, payload: unknown,
 }
 
 export async function updateConfirmEventPayload(userId: string, payload: unknown) {
+  const draftId = typeof payload === "object" && payload !== null && "draftId" in payload
+    && typeof payload.draftId === "string"
+    ? payload.draftId
+    : null;
+
+  if (!draftId) {
+    return null;
+  }
+
   const rows = await sql`
     UPDATE pending_actions
     SET payload = ${JSON.stringify(payload)}
     WHERE user_id = ${userId}
       AND type = 'confirm_event'
+      AND payload::jsonb ->> 'draftId' = ${draftId}
     RETURNING id, user_id, type, payload, expires_at, created_at
+  ` as PendingAction[];
+
+  return rows[0] ?? null;
+}
+
+export async function findConfirmEventByDraftId(userId: string, draftId: string) {
+  const rows = await sql`
+    SELECT id, user_id, type, payload, expires_at, created_at
+    FROM pending_actions
+    WHERE user_id = ${userId}
+      AND type = 'confirm_event'
+      AND payload::jsonb ->> 'draftId' = ${draftId}
+    LIMIT 1
   ` as PendingAction[];
 
   return rows[0] ?? null;
@@ -252,12 +269,12 @@ export async function findByUserId(userId: string) {
     SELECT id, user_id, type, payload, expires_at, created_at
     FROM pending_actions
     WHERE user_id = ${userId}
+      AND type <> 'confirm_event'
     ORDER BY CASE type
       WHEN 'edit_event_field' THEN 1
       WHEN 'create_calendar' THEN 2
       WHEN 'rename_calendar' THEN 3
       WHEN 'edit_event' THEN 4
-      WHEN 'confirm_event' THEN 5
       WHEN 'event_waiting_for_calendar' THEN 6
       WHEN 'calendar_join' THEN 7
       ELSE 8

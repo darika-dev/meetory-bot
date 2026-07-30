@@ -54,8 +54,28 @@ export function calendarJoinConfirmCallbackData(rawToken: string) {
   return `calendar:join:${rawToken}`;
 }
 
-export function eventCalendarCallbackData(calendarId: string) {
-  return `event:calendar:${calendarId}`;
+export function eventCalendarMenuCallbackData(draftId: string) {
+  return `event:calendar:${draftId}`;
+}
+
+export function eventCalendarCallbackData(draftId: string, calendarId: string) {
+  return `event:calendar:${draftId}:${calendarId}`;
+}
+
+export function eventBackCallbackData(draftId: string) {
+  return `event:back:${draftId}`;
+}
+
+export function eventEditCallbackData(draftId: string) {
+  return `event:edit:${draftId}`;
+}
+
+export function eventEditFieldCallbackData(draftId: string, field: string) {
+  return `event:edit:${draftId}:${field}`;
+}
+
+export function eventCancelCallbackData(draftId: string) {
+  return `event:cancel:${draftId}`;
 }
 
 export function connectGoogleKeyboard(telegramUserId: string, language: Language) {
@@ -667,53 +687,54 @@ export function calendarBackKeyboard(language: Language, calendarId: string) {
 
 export function eventDraftKeyboard(language: Language, calendarName: string, draftId: string) {
   return new InlineKeyboard()
-    .text(`📅 ${calendarName} ▾`, callbackData.eventCalendar)
+    .text(`📅 ${calendarName} ▾`, eventCalendarMenuCallbackData(draftId))
     .row()
     .text(messages.saveEventButton(language), `${callbackData.eventSave}:${draftId}`)
     .row()
-    .text(messages.editButton(language), callbackData.eventEdit)
+    .text(messages.editButton(language), eventEditCallbackData(draftId))
     .row()
-    .text(messages.cancelButton(language), callbackData.eventCancel);
+    .text(messages.cancelButton(language), eventCancelCallbackData(draftId));
 }
 
-export function eventEditMenuKeyboard(language: Language) {
+export function eventEditMenuKeyboard(language: Language, draftId: string) {
   return new InlineKeyboard()
-    .text(messages.editTitleButton(language), "event:edit:title")
+    .text(messages.editTitleButton(language), eventEditFieldCallbackData(draftId, "title"))
     .row()
-    .text(messages.editLocationButton(language), "event:edit:location")
+    .text(messages.editLocationButton(language), eventEditFieldCallbackData(draftId, "location"))
     .row()
-    .text(messages.editPriceButton(language), "event:edit:price")
+    .text(messages.editPriceButton(language), eventEditFieldCallbackData(draftId, "price"))
     .row()
-    .text(messages.editDescriptionButton(language), "event:edit:description")
+    .text(messages.editDescriptionButton(language), eventEditFieldCallbackData(draftId, "description"))
     .row()
-    .text(messages.backButton(language), callbackData.eventBack);
+    .text(messages.backButton(language), eventBackCallbackData(draftId));
 }
 
 export function eventCalendarSelectionKeyboard(input: {
   language: Language;
   calendars: CalendarListItem[];
   selectedCalendarId: string;
+  draftId: string;
 }) {
   const keyboard = new InlineKeyboard();
 
   for (const calendar of input.calendars) {
     const prefix = calendar.id === input.selectedCalendarId ? "✅" : "📅";
 
-    keyboard.text(`${prefix} ${calendar.summary}`, eventCalendarCallbackData(calendar.id)).row();
+    keyboard.text(`${prefix} ${calendar.summary}`, eventCalendarCallbackData(input.draftId, calendar.id)).row();
   }
 
-  return keyboard.text(messages.backButton(input.language), callbackData.eventBack);
+  return keyboard.text(messages.backButton(input.language), eventBackCallbackData(input.draftId));
 }
 
 export function eventEditCancelKeyboard(language: Language) {
   return new InlineKeyboard().text(messages.cancelEditingButton(language), callbackData.eventCancelEdit);
 }
 
-export function eventEditFieldKeyboard(language: Language) {
+export function eventEditFieldKeyboard(language: Language, draftId: string) {
   return new InlineKeyboard()
-    .text(messages.backButton(language), callbackData.eventEditBack)
+    .text(messages.backButton(language), eventEditCallbackData(draftId))
     .row()
-    .text(messages.cancelButton(language), callbackData.eventCancel);
+    .text(messages.cancelButton(language), eventCancelCallbackData(draftId));
 }
 
 export function eventSavedKeyboard(input: {

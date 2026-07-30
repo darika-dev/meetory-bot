@@ -6,7 +6,12 @@ import {
   type EventEditField,
 } from "../src/events/eventDraftEditing.js";
 import type { ConfirmEventPayload } from "../src/events/eventDraft.js";
-import { eventEditMenuKeyboard } from "../src/telegramScreens.js";
+import {
+  eventCalendarSelectionKeyboard,
+  eventDraftKeyboard,
+  eventEditFieldKeyboard,
+  eventEditMenuKeyboard,
+} from "../src/telegramScreens.js";
 
 function draft(overrides: Partial<ConfirmEventPayload> = {}): ConfirmEventPayload {
   return {
@@ -43,17 +48,67 @@ function assertDraft(value: ConfirmEventPayload | { error: string }): asserts va
 }
 
 test("edit menu contains only MVP text fields", () => {
-  const callbackData = eventEditMenuKeyboard("en").inline_keyboard
+  const callbackData = eventEditMenuKeyboard("en", "draft-1").inline_keyboard
     .flat()
     .map((button) => "callback_data" in button ? button.callback_data : null)
     .filter((value): value is string => Boolean(value));
 
   assert.deepEqual(callbackData, [
-    "event:edit:title",
-    "event:edit:location",
-    "event:edit:price",
-    "event:edit:description",
-    "event:back",
+    "event:edit:draft-1:title",
+    "event:edit:draft-1:location",
+    "event:edit:draft-1:price",
+    "event:edit:draft-1:description",
+    "event:back:draft-1",
+  ]);
+});
+
+test("draft preview actions are scoped to the draft id", () => {
+  const keyboard = eventDraftKeyboard("en", "Meetory", "draft-a").inline_keyboard;
+  const callbackData = keyboard
+    .flat()
+    .map((button) => "callback_data" in button ? button.callback_data : null)
+    .filter((value): value is string => Boolean(value));
+
+  assert.deepEqual(callbackData, [
+    "event:calendar:draft-a",
+    "event:save:draft-a",
+    "event:edit:draft-a",
+    "event:cancel:draft-a",
+  ]);
+});
+
+test("calendar selection actions keep the draft id for every calendar", () => {
+  const keyboard = eventCalendarSelectionKeyboard({
+    language: "en",
+    draftId: "draft-b",
+    selectedCalendarId: "2",
+    calendars: [
+      { id: "1", summary: "Food" },
+      { id: "2", summary: "Music" },
+    ],
+  }).inline_keyboard;
+  const callbackData = keyboard
+    .flat()
+    .map((button) => "callback_data" in button ? button.callback_data : null)
+    .filter((value): value is string => Boolean(value));
+
+  assert.deepEqual(callbackData, [
+    "event:calendar:draft-b:1",
+    "event:calendar:draft-b:2",
+    "event:back:draft-b",
+  ]);
+});
+
+test("edit field keyboard returns to the same draft", () => {
+  const keyboard = eventEditFieldKeyboard("en", "draft-c").inline_keyboard;
+  const callbackData = keyboard
+    .flat()
+    .map((button) => "callback_data" in button ? button.callback_data : null)
+    .filter((value): value is string => Boolean(value));
+
+  assert.deepEqual(callbackData, [
+    "event:edit:draft-c",
+    "event:cancel:draft-c",
   ]);
 });
 
