@@ -99,9 +99,33 @@ CREATE TABLE IF NOT EXISTS calendar_members (
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('owner', 'member')),
   joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (calendar_id, user_id),
   UNIQUE (calendar_id, user_id)
 );
+
+ALTER TABLE calendar_members
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+UPDATE calendar_members
+SET role = 'member'
+FROM calendars
+WHERE calendar_members.calendar_id = calendars.id
+  AND calendar_members.role = 'owner'
+  AND calendar_members.user_id <> calendars.created_by_user_id;
+
+INSERT INTO calendar_members (
+  calendar_id,
+  user_id,
+  role
+)
+SELECT
+  calendars.id,
+  calendars.created_by_user_id,
+  'owner'
+FROM calendars
+ON CONFLICT (calendar_id, user_id)
+DO UPDATE SET role = 'owner';
 
 CREATE TABLE IF NOT EXISTS pending_actions (
   id BIGSERIAL PRIMARY KEY,
@@ -180,6 +204,10 @@ CREATE INDEX IF NOT EXISTS calendars_created_by_user_id_idx
 
 CREATE INDEX IF NOT EXISTS calendar_members_user_id_idx
   ON calendar_members(user_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS calendar_members_one_owner_per_calendar_idx
+  ON calendar_members(calendar_id)
+  WHERE role = 'owner';
 
 CREATE INDEX IF NOT EXISTS users_active_calendar_id_idx
   ON users(active_calendar_id);

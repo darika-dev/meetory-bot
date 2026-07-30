@@ -3,7 +3,7 @@ import { createGoogleOAuthClient } from "./oauth.js";
 import { classifyGoogleApiError, type GoogleApiErrorKind } from "./googleApiErrors.js";
 import type { GoogleConnection } from "../repositories/googleConnections.js";
 import type { Calendar } from "../repositories/calendars.js";
-import * as calendarMembersRepository from "../repositories/calendarMembers.js";
+import { assertCalendarMember } from "../calendars/calendarAccess.js";
 import * as calendarsRepository from "../repositories/calendars.js";
 import * as googleConnectionsRepository from "../repositories/googleConnections.js";
 import { decryptToken } from "../security/tokenEncryption.js";
@@ -580,17 +580,7 @@ export async function createGoogleCalendarEvent(input: {
   calendarId: string;
   draft: GoogleEventDraft;
 }) {
-  const isMember = await calendarMembersRepository.isMember(input.userId, input.calendarId);
-
-  if (!isMember) {
-    throw new Error("Calendar not found or access denied");
-  }
-
-  const calendarRecord = await calendarsRepository.findById(input.calendarId);
-
-  if (!calendarRecord) {
-    throw new Error("Calendar not found");
-  }
+  const { calendar: calendarRecord } = await assertCalendarMember(input.calendarId, input.userId);
 
   const connection = await getCalendarConnection(calendarRecord);
   const metadata = await getCalendarMetadataByGoogleId({
@@ -693,17 +683,7 @@ export async function getCalendarEvents(input: {
   rangeEnd: string;
   timeZone: string;
 }) {
-  const isMember = await calendarMembersRepository.isMember(input.userId, input.calendarId);
-
-  if (!isMember) {
-    throw new Error("Calendar not found or access denied");
-  }
-
-  const calendarRecord = await calendarsRepository.findById(input.calendarId);
-
-  if (!calendarRecord) {
-    throw new Error("Calendar not found");
-  }
+  const { calendar: calendarRecord } = await assertCalendarMember(input.calendarId, input.userId);
 
   const connection = await getCalendarConnection(calendarRecord);
   const metadata = await getCalendarMetadataByGoogleId({

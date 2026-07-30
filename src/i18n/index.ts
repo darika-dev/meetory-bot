@@ -192,14 +192,54 @@ export const messages = {
   calendarNotFoundOrAccessDenied(language: Language) {
     return t(language).calendar.notFoundOrAccessDenied;
   },
-  calendarCard(language: Language, calendarName: string, isActive: boolean) {
-    return t(language).format(isActive ? "calendar.cardActive" : "calendar.cardInactive", { calendarName });
+  calendarCard(language: Language, input: {
+    calendarName: string;
+    ownerName: string;
+    memberCount: number;
+    isActive: boolean;
+  }) {
+    return t(language).format(input.isActive ? "calendar.cardActive" : "calendar.cardInactive", input);
   },
   activeCalendarChanged(language: Language, calendarName: string) {
     return t(language).format("calendar.activeChanged", { calendarName });
   },
   calendarAlreadyActive(language: Language) {
     return t(language).calendar.alreadyActive;
+  },
+  calendarMembersTitle(language: Language, calendarName: string) {
+    return t(language).format("calendar.membersTitle", { calendarName });
+  },
+  calendarMemberRole(language: Language, role: "owner" | "member") {
+    return role === "owner"
+      ? t(language).calendar.memberRoleOwner
+      : t(language).calendar.memberRoleMember;
+  },
+  calendarMemberFallbackName(language: Language) {
+    return t(language).calendar.memberFallbackName;
+  },
+  chooseCalendarMemberToRemove(language: Language) {
+    return t(language).calendar.chooseMemberToRemove;
+  },
+  removeCalendarMemberConfirm(language: Language, memberName: string, calendarName: string) {
+    return t(language).format("calendar.removeMemberConfirm", { memberName, calendarName });
+  },
+  calendarMemberRemoved(language: Language) {
+    return t(language).calendar.memberRemoved;
+  },
+  calendarMemberRemoveOwnerDenied(language: Language) {
+    return t(language).calendar.memberRemoveOwnerDenied;
+  },
+  calendarMemberNotFound(language: Language) {
+    return t(language).calendar.memberNotFound;
+  },
+  leaveCalendarConfirm(language: Language, calendarName: string) {
+    return t(language).format("calendar.leaveConfirm", { calendarName });
+  },
+  leftCalendar(language: Language) {
+    return t(language).calendar.leftCalendar;
+  },
+  ownerLeaveDenied(language: Language) {
+    return t(language).calendar.ownerLeaveDenied;
   },
   renameOwnerOnly(language: Language) {
     return t(language).calendar.renameOwnerOnly;
@@ -508,6 +548,21 @@ export const messages = {
   },
   makeActiveButton(language: Language) {
     return t(language).buttons.makeActive;
+  },
+  membersButton(language: Language) {
+    return t(language).buttons.members;
+  },
+  removeMemberButton(language: Language) {
+    return t(language).buttons.removeMember;
+  },
+  confirmRemoveMemberButton(language: Language) {
+    return t(language).buttons.confirmRemoveMember;
+  },
+  leaveCalendarButton(language: Language) {
+    return t(language).buttons.leaveCalendar;
+  },
+  confirmLeaveCalendarButton(language: Language) {
+    return t(language).buttons.confirmLeaveCalendar;
   },
   renameButton(language: Language) {
     return t(language).buttons.rename;

@@ -16,6 +16,7 @@ import {
   updateDraftField,
 } from "./events/eventDraftEditing.js";
 import { discardEventDraft } from "./events/eventDraftCancel.js";
+import { getCalendarAccess, assertCalendarOwner } from "./calendars/calendarAccess.js";
 import { formatCalendarEventGroupMessages } from "./events/calendarEvents.js";
 import {
   getTodayRange,
@@ -58,6 +59,10 @@ import { getLanguage, getTelegramLanguage, messages } from "./i18n/index.js";
 import {
   calendarCardKeyboard,
   calendarDeleteConfirmKeyboard,
+  calendarLeaveConfirmKeyboard,
+  calendarMemberRemoveConfirmKeyboard,
+  calendarMemberRemoveListKeyboard,
+  calendarMembersKeyboard,
   calendarsListKeyboard,
   connectGoogleKeyboard,
   createCalendarCancelKeyboard,
@@ -69,6 +74,7 @@ import {
   eventEditMenuKeyboard,
   eventsMenuKeyboard,
   eventSavedKeyboard,
+  formatCalendarMembers,
   formatMainMenuMessage,
   formatSettingsMessage,
   formatTomorrowDigestSettings,
@@ -82,6 +88,7 @@ import {
   settingsKeyboard,
   tomorrowDigestSettingsKeyboard,
   weekendDigestSettingsKeyboard,
+  type CalendarMemberListItem,
   type MainMenuMode,
 } from "./telegramScreens.js";
 
@@ -304,6 +311,20 @@ function getCalendarIdFromCallback(data: string, prefix: string) {
   return data.startsWith(prefix) ? data.slice(prefix.length) : "";
 }
 
+function parseCalendarMemberCallback(data: string, prefix: string) {
+  if (!data.startsWith(prefix)) {
+    return null;
+  }
+
+  const [calendarId, userId] = data.slice(prefix.length).split(":");
+
+  if (!calendarId || !userId) {
+    return null;
+  }
+
+  return { calendarId, userId };
+}
+
 function parseRenameCalendarPayload(payload: unknown): RenameCalendarPayload | null {
   if (typeof payload !== "object" || payload === null) {
     return null;
@@ -312,6 +333,23 @@ function parseRenameCalendarPayload(payload: unknown): RenameCalendarPayload | n
   const calendarId = (payload as { calendarId?: unknown }).calendarId;
 
   return typeof calendarId === "string" && calendarId ? { calendarId } : null;
+}
+
+function formatMemberDisplayName(member: usersRepository.User, language: ReturnType<typeof getLanguage>) {
+  const name = [member.first_name, member.last_name]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join(" ")
+    .trim();
+
+  if (name) {
+    return name;
+  }
+
+  if (member.telegram_username) {
+    return `@${member.telegram_username}`;
+  }
+
+  return messages.calendarMemberFallbackName(language);
 }
 
 function formatDateForLanguage(date: string, language: ReturnType<typeof getLanguage>) {
@@ -558,13 +596,7 @@ async function clearRenamePendingAction(userId: string) {
 }
 
 async function getMemberCalendar(userId: string, calendarId: string) {
-  const isMember = await calendarMembersRepository.isMember(userId, calendarId);
-
-  if (!isMember) {
-    return null;
-  }
-
-  return calendarsRepository.findById(calendarId);
+  return (await getCalendarAccess(calendarId, userId))?.calendar ?? null;
 }
 
 async function resolveEventCalendarsForUser(user: usersRepository.User) {
@@ -1243,12 +1275,13 @@ async function replyCalendarProblem(target: ReplyTarget, user: usersRepository.U
 
 async function openCalendarCard(target: ReplyTarget, user: usersRepository.User, calendarId: string) {
   const language = getLanguage(user.language);
-  const calendar = await getMemberCalendar(user.id, calendarId);
+  const access = await getCalendarAccess(calendarId, user.id);
 
-  if (!calendar) {
+  if (!access) {
     return target.reply(messages.calendarNotFoundOrAccessDenied(language));
   }
 
+  const calendar = access.calendar;
   const checked = await checkCalendarAvailability(calendar);
 
   if (checked.status === "calendar_not_found") {
@@ -1263,15 +1296,67 @@ async function openCalendarCard(target: ReplyTarget, user: usersRepository.User,
     return replyCalendarProblem(target, user, checked.status);
   }
 
-  return target.reply(messages.calendarCard(
-    language,
-    checked.metadata.summary,
-    user.active_calendar_id === calendar.id,
-  ), {
+  const members = await calendarMembersRepository.listCalendarMembers(calendar.id);
+  const owner = members.find((member) => member.role === "owner");
+  const ownerName = owner
+    ? formatMemberDisplayName(owner, language)
+    : messages.calendarMemberFallbackName(language);
+
+  return target.reply(messages.calendarCard(language, {
+    calendarName: checked.metadata.summary,
+    ownerName,
+    memberCount: members.length,
+    isActive: user.active_calendar_id === calendar.id,
+  }), {
     reply_markup: calendarCardKeyboard({
       language,
       calendarId: calendar.id,
       isActive: user.active_calendar_id === calendar.id,
+      canManage: access.isOwner,
+      canLeave: !access.isOwner,
+    }),
+  });
+}
+
+async function showCalendarMembers(target: ReplyTarget, user: usersRepository.User, calendarId: string) {
+  const language = getLanguage(user.language);
+  const access = await getCalendarAccess(calendarId, user.id);
+
+  if (!access) {
+    return target.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  const checked = await checkCalendarAvailability(access.calendar);
+
+  if (checked.status === "calendar_not_found") {
+    await cleanupDeletedCalendar(access.calendar);
+
+    return target.reply(messages.calendarDeletedInGoogle(language), {
+      reply_markup: noCalendarsKeyboard(language),
+    });
+  }
+
+  if (checked.status !== "available") {
+    return replyCalendarProblem(target, user, checked.status);
+  }
+
+  const members = await calendarMembersRepository.listCalendarMembers(access.calendar.id);
+  const memberItems: CalendarMemberListItem[] = members.map((member) => ({
+    userId: member.id,
+    displayName: formatMemberDisplayName(member, language),
+    role: member.role,
+  }));
+
+  return target.reply(formatCalendarMembers({
+    language,
+    calendarName: checked.metadata.summary,
+    members: memberItems,
+  }), {
+    reply_markup: calendarMembersKeyboard({
+      language,
+      calendarId: access.calendar.id,
+      canManage: access.isOwner,
+      canLeave: !access.isOwner,
     }),
   });
 }
@@ -1844,12 +1929,16 @@ bot?.callbackQuery(/^calendar:activate:/, async (ctx) => {
     return replyCalendarProblem(ctx, user, checked.status);
   }
 
+  const access = await getCalendarAccess(calendar.id, user.id);
+
   if (user.active_calendar_id === calendar.id) {
     return ctx.reply(messages.calendarAlreadyActive(language), {
       reply_markup: calendarCardKeyboard({
         language,
         calendarId: calendar.id,
         isActive: true,
+        canManage: access?.isOwner === true,
+        canLeave: access?.isOwner === false,
       }),
     });
   }
@@ -1859,6 +1948,212 @@ bot?.callbackQuery(/^calendar:activate:/, async (ctx) => {
   return ctx.reply(messages.activeCalendarChanged(language, checked.metadata.summary), {
     reply_markup: mainCalendarKeyboard(language),
   });
+});
+
+bot?.callbackQuery(/^calendar:members:/, async (ctx, next) => {
+  const data = ctx.callbackQuery.data ?? "";
+
+  if (data.startsWith("calendar:members:remove:") ||
+    data.startsWith("calendar:members:remove-select:") ||
+    data.startsWith("calendar:members:remove-confirm:")) {
+    return next();
+  }
+
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  return showCalendarMembers(ctx, user, getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:members:"));
+});
+
+bot?.callbackQuery(/^calendar:members:remove:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:members:remove:");
+  const access = await getCalendarAccess(calendarId, user.id);
+
+  if (!access) {
+    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  if (!access.isOwner) {
+    return ctx.reply(messages.deleteOwnerOnly(language));
+  }
+
+  const members = await calendarMembersRepository.listCalendarMembers(access.calendar.id);
+  const memberItems: CalendarMemberListItem[] = members.map((member) => ({
+    userId: member.id,
+    displayName: formatMemberDisplayName(member, language),
+    role: member.role,
+  }));
+
+  return ctx.reply(messages.chooseCalendarMemberToRemove(language), {
+    reply_markup: calendarMemberRemoveListKeyboard({
+      language,
+      calendarId: access.calendar.id,
+      members: memberItems,
+    }),
+  });
+});
+
+bot?.callbackQuery(/^calendar:members:remove-select:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const parsed = parseCalendarMemberCallback(ctx.callbackQuery.data, "calendar:members:remove-select:");
+
+  if (!parsed) {
+    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  const access = await getCalendarAccess(parsed.calendarId, user.id);
+
+  if (!access) {
+    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  if (!access.isOwner) {
+    return ctx.reply(messages.deleteOwnerOnly(language));
+  }
+
+  const targetMembership = await calendarMembersRepository.getCalendarMembership(access.calendar.id, parsed.userId);
+
+  if (!targetMembership) {
+    return ctx.reply(messages.calendarMemberNotFound(language));
+  }
+
+  if (targetMembership.role === "owner") {
+    return ctx.reply(messages.calendarMemberRemoveOwnerDenied(language));
+  }
+
+  const checked = await checkCalendarAvailability(access.calendar);
+  const members = await calendarMembersRepository.listCalendarMembers(access.calendar.id);
+  const target = members.find((member) => member.id === parsed.userId);
+  const memberName = target ? formatMemberDisplayName(target, language) : messages.calendarMemberFallbackName(language);
+  const calendarName = checked.status === "available" ? checked.metadata.summary : access.calendar.name;
+
+  return ctx.reply(messages.removeCalendarMemberConfirm(language, memberName, calendarName), {
+    reply_markup: calendarMemberRemoveConfirmKeyboard({
+      language,
+      calendarId: access.calendar.id,
+      userId: parsed.userId,
+    }),
+  });
+});
+
+bot?.callbackQuery(/^calendar:members:remove-confirm:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const parsed = parseCalendarMemberCallback(ctx.callbackQuery.data, "calendar:members:remove-confirm:");
+
+  if (!parsed) {
+    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  let access: Awaited<ReturnType<typeof assertCalendarOwner>>;
+
+  try {
+    access = await assertCalendarOwner(parsed.calendarId, user.id);
+  } catch {
+    return ctx.reply(messages.deleteOwnerOnly(language));
+  }
+
+  const targetMembership = await calendarMembersRepository.getCalendarMembership(access.calendar.id, parsed.userId);
+
+  if (!targetMembership) {
+    return ctx.reply(messages.calendarMemberNotFound(language));
+  }
+
+  if (targetMembership.role === "owner") {
+    return ctx.reply(messages.calendarMemberRemoveOwnerDenied(language));
+  }
+
+  await calendarMembersRepository.removeMemberAndChooseFallback({
+    calendarId: access.calendar.id,
+    userId: parsed.userId,
+  });
+
+  await ctx.reply(messages.calendarMemberRemoved(language));
+
+  return showCalendarMembers(ctx, user, access.calendar.id);
+});
+
+bot?.callbackQuery(/^calendar:leave:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:leave:");
+  const access = await getCalendarAccess(calendarId, user.id);
+
+  if (!access) {
+    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  if (access.isOwner) {
+    return ctx.reply(messages.ownerLeaveDenied(language));
+  }
+
+  const checked = await checkCalendarAvailability(access.calendar);
+  const calendarName = checked.status === "available" ? checked.metadata.summary : access.calendar.name;
+
+  return ctx.reply(messages.leaveCalendarConfirm(language, calendarName), {
+    reply_markup: calendarLeaveConfirmKeyboard(language, access.calendar.id),
+  });
+});
+
+bot?.callbackQuery(/^calendar:leave-confirm:/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await getUserFromCallback(ctx);
+
+  if (!user || !ctx.callbackQuery.data) {
+    return;
+  }
+
+  const language = getLanguage(user.language);
+  const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:leave-confirm:");
+  const access = await getCalendarAccess(calendarId, user.id);
+
+  if (!access) {
+    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
+  }
+
+  if (access.isOwner) {
+    return ctx.reply(messages.ownerLeaveDenied(language));
+  }
+
+  await calendarMembersRepository.removeMemberAndChooseFallback({
+    calendarId: access.calendar.id,
+    userId: user.id,
+  });
+
+  const refreshedUser = await usersRepository.findById(user.id) ?? user;
+
+  return replyCalendarsList(ctx, refreshedUser, messages.leftCalendar(language));
 });
 
 bot?.callbackQuery(/^calendar:rename:/, async (ctx, next) => {
@@ -1875,18 +2170,15 @@ bot?.callbackQuery(/^calendar:rename:/, async (ctx, next) => {
 
   const language = getLanguage(user.language);
   const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:rename:");
-  const calendar = await getMemberCalendar(user.id, calendarId);
+  let access: Awaited<ReturnType<typeof assertCalendarOwner>>;
 
-  if (!calendar) {
-    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
-  }
-
-  const role = await calendarMembersRepository.getRole(user.id, calendar.id);
-
-  if (role !== "owner") {
+  try {
+    access = await assertCalendarOwner(calendarId, user.id);
+  } catch {
     return ctx.reply(messages.renameOwnerOnly(language));
   }
 
+  const calendar = access.calendar;
   const checked = await checkCalendarAvailability(calendar);
 
   if (checked.status === "calendar_not_found") {
@@ -1941,18 +2233,15 @@ bot?.callbackQuery(/^calendar:delete:/, async (ctx, next) => {
 
   const language = getLanguage(user.language);
   const calendarId = getCalendarIdFromCallback(data, "calendar:delete:");
-  const calendar = await getMemberCalendar(user.id, calendarId);
+  let access: Awaited<ReturnType<typeof assertCalendarOwner>>;
 
-  if (!calendar) {
-    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
-  }
-
-  const role = await calendarMembersRepository.getRole(user.id, calendar.id);
-
-  if (role !== "owner") {
+  try {
+    access = await assertCalendarOwner(calendarId, user.id);
+  } catch {
     return ctx.reply(messages.deleteOwnerOnly(language));
   }
 
+  const calendar = access.calendar;
   const checked = await checkCalendarAvailability(calendar);
 
   if (checked.status === "calendar_not_found") {
@@ -1993,18 +2282,15 @@ bot?.callbackQuery(/^calendar:delete:confirm:/, async (ctx) => {
 
   const language = getLanguage(user.language);
   const calendarId = getCalendarIdFromCallback(ctx.callbackQuery.data, "calendar:delete:confirm:");
-  const calendar = await getMemberCalendar(user.id, calendarId);
+  let access: Awaited<ReturnType<typeof assertCalendarOwner>>;
 
-  if (!calendar) {
-    return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
-  }
-
-  const role = await calendarMembersRepository.getRole(user.id, calendar.id);
-
-  if (role !== "owner") {
+  try {
+    access = await assertCalendarOwner(calendarId, user.id);
+  } catch {
     return ctx.reply(messages.deleteOwnerOnly(language));
   }
 
+  const calendar = access.calendar;
   const wasActive = user.active_calendar_id === calendar.id;
 
   try {
@@ -2531,21 +2817,17 @@ bot?.on("message", async (ctx) => {
       return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
     }
 
-    const calendar = await getMemberCalendar(user.id, payload.calendarId);
+    let access: Awaited<ReturnType<typeof assertCalendarOwner>>;
 
-    if (!calendar) {
-      await pendingActionsRepository.deleteByUserId(user.id);
-
-      return ctx.reply(messages.calendarNotFoundOrAccessDenied(language));
-    }
-
-    const role = await calendarMembersRepository.getRole(user.id, calendar.id);
-
-    if (role !== "owner") {
+    try {
+      access = await assertCalendarOwner(payload.calendarId, user.id);
+    } catch {
       await pendingActionsRepository.deleteByUserId(user.id);
 
       return ctx.reply(messages.renameOwnerOnly(language));
     }
+
+    const calendar = access.calendar;
 
     if (!name) {
       return ctx.reply(messages.invalidCalendarName(language));

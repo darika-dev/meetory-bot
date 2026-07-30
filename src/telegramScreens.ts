@@ -18,6 +18,30 @@ export function calendarDeleteCallbackData(action: "confirm" | "cancel", calenda
   return `calendar:delete:${action}:${calendarId}`;
 }
 
+export function calendarMembersCallbackData(calendarId: string) {
+  return `calendar:members:${calendarId}`;
+}
+
+export function calendarMembersRemoveCallbackData(calendarId: string) {
+  return `calendar:members:remove:${calendarId}`;
+}
+
+export function calendarMemberRemoveSelectCallbackData(calendarId: string, userId: string) {
+  return `calendar:members:remove-select:${calendarId}:${userId}`;
+}
+
+export function calendarMemberRemoveConfirmCallbackData(calendarId: string, userId: string) {
+  return `calendar:members:remove-confirm:${calendarId}:${userId}`;
+}
+
+export function calendarLeaveCallbackData(calendarId: string) {
+  return `calendar:leave:${calendarId}`;
+}
+
+export function calendarLeaveConfirmCallbackData(calendarId: string) {
+  return `calendar:leave-confirm:${calendarId}`;
+}
+
 export function eventCalendarCallbackData(calendarId: string) {
   return `event:calendar:${calendarId}`;
 }
@@ -362,6 +386,8 @@ export function calendarCardKeyboard(input: {
   language: Language;
   calendarId: string;
   isActive: boolean;
+  canManage: boolean;
+  canLeave: boolean;
 }) {
   const keyboard = new InlineKeyboard();
 
@@ -369,12 +395,103 @@ export function calendarCardKeyboard(input: {
     keyboard.text(messages.makeActiveButton(input.language), calendarCallbackData("activate", input.calendarId)).row();
   }
 
-  return keyboard
-    .text(messages.renameButton(input.language), calendarCallbackData("rename", input.calendarId))
+  keyboard.text(messages.membersButton(input.language), calendarMembersCallbackData(input.calendarId)).row();
+
+  if (input.canManage) {
+    keyboard
+      .text(messages.renameButton(input.language), calendarCallbackData("rename", input.calendarId))
+      .row()
+      .text(messages.deleteButton(input.language), calendarCallbackData("delete", input.calendarId))
+      .row();
+  }
+
+  if (input.canLeave) {
+    keyboard.text(messages.leaveCalendarButton(input.language), calendarLeaveCallbackData(input.calendarId)).row();
+  }
+
+  return keyboard.text(messages.backButton(input.language), callbackData.listCalendars);
+}
+
+export type CalendarMemberListItem = {
+  userId: string;
+  displayName: string;
+  role: "owner" | "member";
+};
+
+export function formatCalendarMembers(input: {
+  language: Language;
+  calendarName: string;
+  members: CalendarMemberListItem[];
+}) {
+  const lines = [
+    messages.calendarMembersTitle(input.language, input.calendarName),
+    "",
+  ];
+
+  for (const member of input.members) {
+    const role = member.role === "owner"
+      ? ` — ${messages.calendarMemberRole(input.language, "owner")}`
+      : "";
+
+    lines.push(`• ${member.displayName}${role}`);
+  }
+
+  return lines.join("\n");
+}
+
+export function calendarMembersKeyboard(input: {
+  language: Language;
+  calendarId: string;
+  canManage: boolean;
+  canLeave: boolean;
+}) {
+  const keyboard = new InlineKeyboard();
+
+  if (input.canManage) {
+    keyboard.text(messages.removeMemberButton(input.language), calendarMembersRemoveCallbackData(input.calendarId)).row();
+  }
+
+  if (input.canLeave) {
+    keyboard.text(messages.leaveCalendarButton(input.language), calendarLeaveCallbackData(input.calendarId)).row();
+  }
+
+  return keyboard.text(messages.backButton(input.language), calendarCallbackData("open", input.calendarId));
+}
+
+export function calendarMemberRemoveListKeyboard(input: {
+  language: Language;
+  calendarId: string;
+  members: CalendarMemberListItem[];
+}) {
+  const keyboard = new InlineKeyboard();
+
+  for (const member of input.members) {
+    if (member.role !== "member") {
+      continue;
+    }
+
+    keyboard.text(member.displayName, calendarMemberRemoveSelectCallbackData(input.calendarId, member.userId)).row();
+  }
+
+  return keyboard.text(messages.backButton(input.language), calendarMembersCallbackData(input.calendarId));
+}
+
+export function calendarMemberRemoveConfirmKeyboard(input: {
+  language: Language;
+  calendarId: string;
+  userId: string;
+}) {
+  return new InlineKeyboard()
+    .text(messages.confirmRemoveMemberButton(input.language), calendarMemberRemoveConfirmCallbackData(input.calendarId, input.userId))
     .row()
-    .text(messages.deleteButton(input.language), calendarCallbackData("delete", input.calendarId))
+    .text(messages.cancelButton(input.language), calendarMembersCallbackData(input.calendarId));
+}
+
+export function calendarLeaveConfirmKeyboard(language: Language, calendarId: string) {
+  return new InlineKeyboard()
+    .text(messages.confirmLeaveCalendarButton(language), calendarLeaveConfirmCallbackData(calendarId))
     .row()
-    .text(messages.backButton(input.language), callbackData.listCalendars);
+    .text(messages.cancelButton(language), calendarMembersCallbackData(calendarId));
 }
 
 export function calendarDeleteConfirmKeyboard(language: Language, calendarId: string) {
